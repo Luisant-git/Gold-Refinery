@@ -1,0 +1,29 @@
+{
+  "name": "gold-refinery-pg-web",
+  "version": "1.0.0",
+  "description": "Gold Refinery Management System (PostgreSQL)",
+  "scripts": {
+    "dev": "concurrently -k -n SERVER,CLIENT -c yellow,cyan \"npm run server\" \"npm run client\"",
+    "server": "nodemon server/index.js",
+    "client": "vite",
+    "build": "vite build",
+    "start": "node server/index.js",
+    "db:reset": "node server/scripts/recreate_db.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "pg": "^8.11.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.8.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "5.4.19",
+    "concurrently": "^8.2.0",
+    "nodemon": "^3.0.2",
+    "wait-on": "^7.2.0"
+  }
+}
