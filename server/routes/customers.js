@@ -6,8 +6,15 @@ router.get('/search', async (req, res) => {
   try {
     const q=`%${req.query.q||''}%`;
     const r=await getPool().query(`SELECT * FROM customers WHERE mobile LIKE $1 OR name ILIKE $1 ORDER BY name LIMIT 20`,[q]);
-    res.json(r.rows);
-  } catch(e) { res.json([]); }
+    res.json({ rows: r.rows });
+  } catch(e) { res.json({ rows: [] }); }
+});
+
+router.get('/by-mobile/:mobile', async (req, res) => {
+  try {
+    const r=await getPool().query(`SELECT * FROM customers WHERE mobile=$1 LIMIT 1`,[req.params.mobile]);
+    res.json({ row: r.rows[0]||null });
+  } catch(e) { res.json({ row:null }); }
 });
 
 router.get('/', async (req, res) => {

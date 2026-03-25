@@ -48,23 +48,74 @@ router.get('/customer-ob/:customerId', async (req, res) => {
     const vs = await pool.query(`
       SELECT voucher_no, voucher_date, total_pure_wt, pure_wt_given,
              COALESCE(cash_given,0) AS cash_given, COALESCE(rate_per_gram,0) AS rate_per_gram,
-             COALESCE(ob_skipped,0) AS ob_skipped
-      FROM exchange_vouchers WHERE customer_id=$1 ORDER BY created_at DESC`, [req.params.customerId]);
+             COALESCE(ob_skipped,0) AS ob_skipped, transaction_type
+      FROM exchange_vouchers WHERE customer_id=$1 ORDER BY created_at ASC`, [req.params.customerId]);
     if (!vs.rows.length) return res.json({ success:true, ob_gold:0, ob_cash:0, has_history:false, ob_items:[] });
-    const ob_items=[]; let total_ob_gold=0;
+
+    // Walk ASC: accumulate running OB gold
+    let runningOB = 0;
     for (const v of vs.rows) {
-      const netOwed=parseFloat(v.total_pure_wt)||0, given=parseFloat(v.pure_wt_given)||0;
-      const cashGiven=parseFloat(v.cash_given)||0, rate=parseFloat(v.rate_per_gram)||0;
-      const obSkipped=parseFloat(v.ob_skipped)||0, diff=parseFloat((given-netOwed).toFixed(3));
-      if (obSkipped>0.001) {
-        if (diff>0.001) { ob_items.push({voucher_no:v.voucher_no,voucher_date:v.voucher_date,transaction_type:'sales',ob_amount:diff,label:'SALES OB — DEDUCTED'}); total_ob_gold+=diff; }
-        ob_items.push({voucher_no:v.voucher_no,voucher_date:v.voucher_date,transaction_type:'sales',ob_amount:obSkipped,label:'SALES OB — CARRIED FORWARD'}); total_ob_gold+=obSkipped; break;
+      const netOwed   = parseFloat(v.total_pure_wt) || 0;
+      const given     = parseFloat(v.pure_wt_given) || 0;
+      const cashGiven = parseFloat(v.cash_given)    || 0;
+      const rate      = parseFloat(v.rate_per_gram) || 0;
+      const obSkipped = parseFloat(v.ob_skipped)    || 0;
+      const diff      = parseFloat((given - netOwed).toFixed(3)); // +ve = sales OB, -ve = purchase
+
+      if (obSkipped > 0.001) {
+        // OB was skipped this voucher — carry it forward
+        runningOB += obSkipped;
+      } else if (diff > 0.001) {
+        // Extra gold given → Sales OB accumulates
+        runningOB += diff;
+      } else if (diff < -0.001) {
+        // Less gold given → purchase; check if cash settled
+        const pendingGold = Math.abs(diff);
+        const cashNeeded  = rate > 0 ? pendingGold * rate : 0;
+        if (cashGiven > 0 && cashNeeded > 0 && cashGiven >= cashNeeded * 0.99) {
+          // Cash settled — clear OB
+          runningOB = 0;
+        }
+        // else purchase not settled — OB unchanged
+      } else {
+        // NIL transaction — clear OB
+        runningOB = 0;
       }
-      if (Math.abs(diff)<0.001) break;
-      else if (diff>0) { ob_items.push({voucher_no:v.voucher_no,voucher_date:v.voucher_date,transaction_type:'sales',ob_amount:diff,label:'SALES OB — DEDUCTED'}); total_ob_gold+=diff; }
-      else { const pg=Math.abs(diff),cv=rate>0?parseFloat((pg*rate).toFixed(2)):0; if (cashGiven>0&&cv>0&&cashGiven>=cv*0.99) break; }
     }
-    res.json({ success:true, ob_gold:parseFloat(total_ob_gold.toFixed(3)), ob_cash:0, has_history:true, ob_items });
+
+    runningOB = parseFloat(runningOB.toFixed(3));
+
+    // Build ob_items from the sales OB vouchers that contributed to current runningOB
+    // Re-walk to collect only the uncleared sales OB entries
+    const ob_items = [];
+    let tempOB = 0;
+    let cleared = false;
+    for (const v of vs.rows) {
+      const netOwed   = parseFloat(v.total_pure_wt) || 0;
+      const given     = parseFloat(v.pure_wt_given) || 0;
+      const cashGiven = parseFloat(v.cash_given)    || 0;
+      const rate      = parseFloat(v.rate_per_gram) || 0;
+      const obSkipped = parseFloat(v.ob_skipped)    || 0;
+      const diff      = parseFloat((given - netOwed).toFixed(3));
+
+      if (obSkipped > 0.001) {
+        ob_items.push({ voucher_no:v.voucher_no, voucher_date:v.voucher_date, ob_amount:obSkipped });
+        tempOB += obSkipped;
+      } else if (diff > 0.001) {
+        ob_items.push({ voucher_no:v.voucher_no, voucher_date:v.voucher_date, ob_amount:diff });
+        tempOB += diff;
+      } else if (diff < -0.001) {
+        const pendingGold = Math.abs(diff);
+        const cashNeeded  = rate > 0 ? pendingGold * rate : 0;
+        if (cashGiven > 0 && cashNeeded > 0 && cashGiven >= cashNeeded * 0.99) {
+          ob_items.length = 0; tempOB = 0; // cleared
+        }
+      } else {
+        ob_items.length = 0; tempOB = 0; // NIL clears
+      }
+    }
+
+    res.json({ success:true, ob_gold:runningOB, ob_cash:0, has_history:true, ob_items });
   } catch(e) { res.json({ success:false, error:e.message }); }
 });
 
