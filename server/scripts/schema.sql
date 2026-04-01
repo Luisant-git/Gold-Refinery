@@ -209,3 +209,9 @@ CREATE TABLE IF NOT EXISTS expenses (
   amount       DECIMAL(12,2) DEFAULT 0,
   created_at   TIMESTAMP DEFAULT NOW()
 );
+CREATE TABLE IF NOT EXISTS pure_token_master (
+  id            SERIAL PRIMARY KEY,
+  token_no      VARCHAR(50) NOT NULL UNIQUE,
+  pure_touch    NUMERIC(5,2) NOT NULL,
+  created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

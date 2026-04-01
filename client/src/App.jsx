@@ -15,6 +15,7 @@ import VoucherList      from './pages/VoucherList';
 import Settings         from './pages/Settings';
 import Login            from './pages/Login';
 import { dbStatus }     from './db/api';
+import PureTokenMaster from './pages/PureTokenMaster';
 
 const NAV = [
   { to:'/',            label:'Dashboard',   icon:'◈' },
@@ -28,6 +29,7 @@ const NAV = [
   { to:'/expenses',    label:'Expenses',     icon:'📋' },
   { to:'/vouchers',    label:'Voucher List', icon:'☰' },
   { to:'/customers',   label:'Customers',    icon:'◉' },
+  { to:'/pure-token-master', label:'Pure Token Master', icon:'#' },
 ];
 
 function Sidebar({ dbConnected, collapsed, setCollapsed, mobileOpen, setMobileOpen, isMobile, user, onLogout }) {
@@ -120,6 +122,7 @@ function Layout({ dbConnected, user, onLogout }) {
           <Route path="/vouchers"    element={<VoucherList />} />
           <Route path="/customers"   element={<CustomerMaster />} />
           <Route path="/settings"    element={<Settings />} />
+          <Route path="/pure-token-master" element={<PureTokenMaster />} />
         </Routes>
       </div>
     </div>

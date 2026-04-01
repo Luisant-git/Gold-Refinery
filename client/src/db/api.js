@@ -1,5 +1,5 @@
 // client/src/db/api.js
-const BASE = '/api';
+const BASE = 'http://localhost:3001/api';
 
 async function req(method, path, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
@@ -102,4 +102,11 @@ export const expenseAPI = {
 
 export const reportAPI = {
   getDashboard: () => get('/reports/dashboard').then(r=>r.row||{}),
+};
+
+export const pureTokenAPI = {
+  getAll:  ()        => get('/pure-tokens').then(r => r.rows || []),
+  create:  data      => post('/pure-tokens', data),
+  update:  (id,data) => put(`/pure-tokens/${id}`, data),
+  delete:  id        => del(`/pure-tokens/${id}`),
 };
