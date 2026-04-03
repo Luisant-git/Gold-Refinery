@@ -56,6 +56,7 @@ export const exchangeAPI = {
   getNextNo:      ()     => get('/exchange/next-no').then(r=>r.voucher_no||'—'),
   getCustomerOB:  custId => get(`/exchange/customer-ob/${custId}`),
   create:         (voucherData,items) => post('/exchange', {voucherData,items}),
+  update:        (id, voucherData, items) => put(`/exchange/${id}`, { voucherData, items }),
 };
 
 export const salesAPI = {
@@ -101,7 +102,7 @@ export const expenseAPI = {
 };
 
 export const reportAPI = {
-  getDashboard: () => get('/reports/dashboard').then(r=>r.row||{}),
+  getDashboard: () => get('/reports/summary').then(r=>r.row||{}),
 };
 
 export const pureTokenAPI = {

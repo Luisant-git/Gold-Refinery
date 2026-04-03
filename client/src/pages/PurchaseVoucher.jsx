@@ -423,7 +423,7 @@ export default function PurchaseVoucher() {
             background:'rgba(26,110,64,0.09)', border:'1.5px solid rgba(26,110,64,0.35)',
           }}>
             <span style={{ fontWeight:600, color:'var(--green)', fontSize:13 }}>✓ {msg.text}</span>
-            {lastSaved && (
+            {/* {lastSaved && (
               <button onClick={() => setLastSaved(s => ({ ...s, _showPrint: true }))}
                 style={{ background:'#6B4A00', color:'#FFF5D6', border:'none',
                   padding:'8px 20px', borderRadius:6, fontWeight:700, fontSize:13,
@@ -431,7 +431,7 @@ export default function PurchaseVoucher() {
                   display:'flex', alignItems:'center', gap:6 }}>
                 🖨 Print Receipt
               </button>
-            )}
+            )} */}
           </div>
         )}
         <div className="btn-group" style={{ justifyContent:'flex-end' }}>

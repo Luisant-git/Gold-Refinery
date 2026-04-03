@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { exchangeAPI, customerAPI, rateAPI, pureTokenAPI } from '../db/api';
 import PrintReceipt from '../components/PrintReceipt';
+import {  useSearchParams } from 'react-router-dom';
 
 const EMPTY_ROW = { token_no: '', katcha_wt: '', katcha_touch: '', less_touch: '', balance_touch: '', pure_wt: '' };
 
@@ -150,12 +151,74 @@ export default function ExchangeVoucher() {
     ob_tx_type: null,
   });
   const [items, setItems] = useState([{ ...EMPTY_ROW }]);
-  const [settle, setSettle] = useState({ cash_gold: '', use_ob: true, cash_given: '' });
   const [msg, setMsg] = useState(null);
   const [saving, setSaving] = useState(false);
   const [latestRate, setLatestRate] = useState(null);
   const [defaultPureTouch, setDefaultPureTouch] = useState('');
+  const [settle, setSettle] = useState({
+    mode: 'purchase',
+    cash_gold: '',
+    use_ob: true,
+    cash_given: ''
+  });
 
+
+const [searchParams] = useSearchParams();
+const editId = searchParams.get('edit');
+//edit 
+useEffect(() => {
+  if (!editId) return;
+
+  const loadVoucherForEdit = async () => {
+    try {
+      const data = await exchangeAPI.getById(editId);
+      if (!data) return;
+
+      setVoucherNo(data.voucher_no || '—');
+
+      setForm({
+        voucher_date: data.voucher_date || today,
+        mobile: data.mobile || '',
+        customer_name: data.customer_name || '',
+        customer_id: data.customer_id || null,
+        rate_per_gram: data.rate_per_gram || '',
+        pure_touch: data.pure_touch || defaultPureTouch || '',
+        remarks: data.remarks || '',
+        ob_exchange_gold: data.ob_exchange_gold || 0,
+        ob_exchange_cash: data.ob_exchange_cash || 0,
+        ob_items: data.ob_items || [],
+        ob_last_voucher: data.ob_last_voucher || null,
+        ob_last_date: data.ob_last_date || null,
+        ob_tx_type: data.ob_tx_type || null,
+      });
+
+      setItems(
+        data.items && data.items.length > 0
+          ? data.items.map(item => ({
+              token_no: item.token_no || '',
+              katcha_wt: item.katcha_wt || '',
+              katcha_touch: item.katcha_touch || '',
+              less_touch: item.less_touch || '',
+              balance_touch: item.balance_touch || '',
+              pure_wt: item.pure_wt || '',
+            }))
+          : [{ ...EMPTY_ROW }]
+      );
+
+      setSettle({
+        mode: data.transaction_type || 'purchase',
+        cash_gold: data.pure_gold_given || '',
+        use_ob: data.ob_skipped ? false : true,
+        cash_given: data.cash_for_remaining || '',
+      });
+    } catch (e) {
+      console.error('Edit load failed:', e);
+      setMsg({ type: 'danger', text: 'Failed to load voucher for edit' });
+    }
+  };
+
+  loadVoucherForEdit();
+}, [editId, defaultPureTouch]);
   // On mount: load latest rate AND pre-fetch next voucher number
   useEffect(() => {
     rateAPI.getLatest()
@@ -186,25 +249,37 @@ export default function ExchangeVoucher() {
 
   // Called when user selects a customer from dropdown
   const onMobileSelect = async cust => {
+    console.log('Selected customer:', cust);
+  
+    // Set immediate customer details first
     setForm(f => ({
       ...f,
-      customer_name: cust.name,
-      customer_id: cust.id,
-      ob_exchange_gold: parseFloat(cust.ob_exchange_gold) || 0,
-      ob_exchange_cash: parseFloat(cust.ob_exchange_cash) || 0,
+      mobile: cust.mobile || f.mobile,
+      customer_name: cust.name || '',
+      customer_id: cust.id || null,
+      ob_exchange_gold: Number(cust.ob_exchange_gold || 0),
+      ob_exchange_cash: Number(cust.ob_exchange_cash || 0),
+      ob_items: [],
     }));
-
+  
     try {
       const ob = await exchangeAPI.getCustomerOB(cust.id);
-      if (ob.success && ob.has_history) {
+      console.log('Customer OB response:', ob);
+  
+      if (ob?.success) {
         setForm(f => ({
           ...f,
-          ob_exchange_gold: ob.ob_gold,
-          ob_exchange_cash: ob.ob_cash,
-          ob_items: ob.ob_items || [],
+          mobile: cust.mobile || f.mobile,
+          customer_name: cust.name || f.customer_name,
+          customer_id: cust.id || f.customer_id,
+          ob_exchange_gold: Number(ob.ob_gold ?? ob.ob_exchange_gold ?? 0),
+          ob_exchange_cash: Number(ob.ob_cash ?? ob.ob_exchange_cash ?? 0),
+          ob_items: Array.isArray(ob.ob_items) ? ob.ob_items : [],
         }));
       }
-    } catch (e) { }
+    } catch (e) {
+      console.error('OB fetch error:', e);
+    }
   };
 
   // Item calc: balance_touch = katcha_touch − less_touch; pure_wt = katcha_wt × balance_touch ÷ 100
@@ -222,6 +297,11 @@ export default function ExchangeVoucher() {
     }));
   };
 
+  const floorTo10mg = (num) => {
+    const n = parseFloat(num) || 0;
+    return Math.floor(n * 100) / 100;
+  };
+
   // ── Computed values ──────────────────────────────────────────
   const totalKatcha = items.reduce((s, r) => s + (parseFloat(r.katcha_wt) || 0), 0);
   const totalPureRaw = items.reduce((s, r) => s + (parseFloat(r.pure_wt) || 0), 0);
@@ -232,23 +312,56 @@ export default function ExchangeVoucher() {
   const obCash = parseFloat(form.ob_exchange_cash) || 0;
   const useOB = settle.use_ob && obGold > 0;         // only deduct if toggled on AND has OB
   const obApplied = useOB ? obGold : 0;                  // actual OB being used this transaction
-  const netPureOwed = parseFloat((actualPureGold - obApplied).toFixed(3));
+  const netPureOwed = floorTo10mg(actualPureGold - obApplied);
   const rate = parseFloat(form.rate_per_gram) || 0;
 
   const cashGold = parseFloat(settle.cash_gold) || 0;
   const cashGiven = parseFloat(settle.cash_given) || 0;
-  const diff = parseFloat((cashGold - netPureOwed).toFixed(3));
-  const cashForPurchase = diff < 0 && rate > 0 ? parseFloat((Math.abs(diff) * rate).toFixed(2)) : 0;
-  const cashRounded = Math.round(cashForPurchase);
-  const cashBalance = parseFloat((cashRounded - cashGiven).toFixed(2));
 
-  // Purchase is NIL if cash given covers the remaining gold value (within ₹1 tolerance)
-  const purchaseCashSettled = diff < -0.001 && cashGiven > 0
-    && cashGiven >= cashForPurchase * 0.99;
+  useEffect(() => {
+    console.log('OB state debug:', {
+      customer_id: form.customer_id,
+      customer_name: form.customer_name,
+      ob_exchange_gold: form.ob_exchange_gold,
+      ob_exchange_cash: form.ob_exchange_cash,
+      ob_items: form.ob_items,
+      obGold,
+      obCash,
+    });
+  }, [form.customer_id, form.customer_name, form.ob_exchange_gold, form.ob_exchange_cash, form.ob_items, obGold, obCash]);
 
-  const isNil = settle.cash_gold !== '' && (Math.abs(diff) < 0.001 || purchaseCashSettled);
-  const isSales = settle.cash_gold !== '' && diff > 0.001;
-  const isPurchase = settle.cash_gold !== '' && diff < -0.001 && !purchaseCashSettled;
+  // Main difference
+// Main difference
+const diff = parseFloat((cashGold - netPureOwed).toFixed(3));
+
+// Helper values
+const pendingGold = Math.max(0, parseFloat((netPureOwed - cashGold).toFixed(3)));
+const extraGold = Math.max(0, parseFloat((cashGold - netPureOwed).toFixed(3)));
+
+// Result based on actual numbers
+const isExact = settle.cash_gold !== '' && Math.abs(diff) < 0.001;
+const isSalesRaw = settle.cash_gold !== '' && diff > 0.001;
+const isPurchaseRaw = settle.cash_gold !== '' && diff < -0.001;
+
+// Purchase cash calc
+const cashForPurchase =
+  isPurchaseRaw && pendingGold > 0 && rate > 0
+    ? parseFloat((pendingGold * rate).toFixed(2))
+    : 0;
+
+const cashRounded = Math.round(cashForPurchase);
+const cashBalance = parseFloat((cashRounded - cashGiven).toFixed(2));
+
+const purchaseCashSettled =
+  isPurchaseRaw &&
+  pendingGold > 0 &&
+  cashGiven > 0 &&
+  cashGiven >= cashForPurchase * 0.99;
+
+// Final UI states
+const isNil = settle.cash_gold !== '' && (isExact || purchaseCashSettled);
+const isSales = settle.cash_gold !== '' && isSalesRaw;
+const isPurchase = settle.cash_gold !== '' && isPurchaseRaw && !purchaseCashSettled;
 
   const monoStyle = { fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 };
 
@@ -256,7 +369,6 @@ export default function ExchangeVoucher() {
   const handleSave = async () => {
     if (!form.mobile) { setMsg({ type: 'danger', text: 'Mobile required' }); return; }
     if (!form.customer_name) { setMsg({ type: 'danger', text: 'Customer name required' }); return; }
-    if (!form.rate_per_gram) { setMsg({ type: 'danger', text: 'Rate per gram required' }); return; }
     const valid = items.filter(r => r.katcha_wt && r.balance_touch);
     if (!valid.length) { setMsg({ type: 'danger', text: 'Add at least one row with Katcha Weight and Touch' }); return; }
 
@@ -270,6 +382,15 @@ export default function ExchangeVoucher() {
         });
         custId = res.id;
       }
+      const actualDiff = parseFloat((cashGold - netPureOwed).toFixed(3));
+
+      let finalTxType = 'nil';
+      if (actualDiff > 0.001) {
+        finalTxType = 'sales';
+      } else if (actualDiff < -0.001) {
+        finalTxType = purchaseCashSettled ? 'nil' : 'purchase';
+      }
+      
       const vData = {
         ...form,
         customer_id: custId,
@@ -277,35 +398,42 @@ export default function ExchangeVoucher() {
         cash_for_remaining: cashGiven > 0 ? cashGiven : cashRounded,
         total_pure_wt: netPureOwed,
         actual_pure_gold: actualPureGold,
-        transaction_type: (isNil || purchaseCashSettled) ? 'nil' : isSales ? 'sales' : 'purchase',
-        diff_gold: diff,
+        transaction_type: finalTxType,
+        diff_gold: actualDiff,
         ob_applied: obApplied,
         ob_skipped: useOB ? 0 : obGold,
       };
-      const result = await exchangeAPI.create(vData, valid);
+      const result = editId
+  ? await exchangeAPI.update(editId, vData, valid)
+  : await exchangeAPI.create(vData, valid);
       // Fetch full voucher for print
       const full = await exchangeAPI.getById(result.id).catch(() => null);
       setLastSaved(full);
       setVoucherNo(result.voucher_no);
-      setMsg({ type: 'success', text: `Exchange Voucher #${result.voucher_no} saved!` });
+      setMsg({
+        type: 'success',
+        text: editId
+          ? `Exchange Voucher #${result.voucher_no} updated!`
+          : `Exchange Voucher #${result.voucher_no} saved!`
+      });
       setTimeout(() => { handleClear(); setMsg(null); }, 8000);
     } catch (e) { setMsg({ type: 'danger', text: e.message }); }
     setSaving(false);
   };
 
   const handleClear = () => {
+    navigate('/exchange');
     setLastSaved(null);
     setForm({
       voucher_date: today, mobile: '', customer_name: '', customer_id: null,
-      rate_per_gram: latestRate?.rate_24k || '', pure_touch: defaultPureTouch , remarks: '',
+      rate_per_gram: latestRate?.rate_24k || '', pure_touch: defaultPureTouch, remarks: '',
       ob_exchange_gold: 0, ob_exchange_cash: 0, ob_items: [],
       ob_last_voucher: null, ob_last_date: null, ob_tx_type: null,
     });
     setItems([{ ...EMPTY_ROW }]);
-    setSettle({ cash_gold: '', use_ob: true, cash_given: '' });
+    setSettle({ mode: 'purchase', cash_gold: '', use_ob: true, cash_given: '' });
     setMsg(null);
-    // Refresh next voucher number
-    exchangeAPI.getNextNo().then(no => setVoucherNo(no)).catch(() => { });
+    exchangeAPI.getNextNo().then(no => setVoucherNo(no)).catch(() => {});
   };
 
   // ── Render ───────────────────────────────────────────────────
@@ -374,7 +502,7 @@ export default function ExchangeVoucher() {
         </div>
 
         {/* ── Exchange OB — always show when customer is selected ── */}
-        {form.customer_id && (
+        {(form.customer_id || obGold !== 0 || obCash !== 0 || (form.ob_items || []).length > 0) && (
           <div style={{
             marginTop: 14,
             background: 'linear-gradient(90deg, #F5F0E6, #EEE8D8)',
@@ -455,7 +583,7 @@ export default function ExchangeVoucher() {
                       fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 14,
                       color: 'var(--red)', minWidth: 90,
                     }}>
-                      −{item.ob_amount.toFixed(3)} g
+                     −{parseFloat(item.ob_amount || 0).toFixed(3)} g
                     </strong>
 
                     {/* Label badge */}
@@ -684,7 +812,7 @@ export default function ExchangeVoucher() {
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                     padding: idx === 0 ? '10px 18px 5px' : '4px 18px',
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                    {/* <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
                       <span style={{
                         fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, flexShrink: 0,
                         background: 'rgba(184,50,50,0.12)', color: 'var(--red)',
@@ -697,10 +825,10 @@ export default function ExchangeVoucher() {
                       <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                         {new Date(item.voucher_date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                       </span>
-                    </div>
-                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 14, color: 'var(--red)' }}>
-                      −{item.ob_amount.toFixed(3)} g
-                    </span>
+                    </div> */}
+                    {/* <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 14, color: 'var(--red)' }}>
+                    −{parseFloat(item.ob_amount || 0).toFixed(3)} g
+                    </span> */}
                   </div>
                 ))}
 
@@ -711,7 +839,7 @@ export default function ExchangeVoucher() {
                   marginTop: (form.ob_items || []).length > 1 ? 4 : 0,
                   borderTop: (form.ob_items || []).length > 1 ? '1px solid rgba(184,50,50,0.2)' : 'none',
                 }}>
-                  <div>
+                  {/* <div>
                     <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: 'var(--red)' }}>
                       {(form.ob_items || []).length > 1
                         ? `Total Sales OB Deduction (${(form.ob_items || []).length} vouchers)`
@@ -720,11 +848,11 @@ export default function ExchangeVoucher() {
                     <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                       Extra gold given previously — deducted from owed now
                     </div>
-                  </div>
-                  <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 20, lineHeight: 1, color: 'var(--red)' }}>
+                  </div> */}
+                  {/* <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 20, lineHeight: 1, color: 'var(--red)' }}>
                     −{obGold.toFixed(3)}
                     <span style={{ fontSize: 13, marginLeft: 4, fontWeight: 400, color: 'var(--text-muted)' }}>g</span>
-                  </div>
+                  </div> */}
                 </div>
               </div>
             )}
@@ -801,17 +929,47 @@ export default function ExchangeVoucher() {
           </div>
 
           {/* ── Pure Gold Given input ── */}
-          <div className="form-group" style={{ marginBottom: settle.cash_gold !== '' ? 10 : 14 }}>
-            <label>Pure Gold Given to Customer (g)</label>
-            <input
-              type="number" step="0.001" min="0"
-              value={settle.cash_gold}
-              onChange={e => setSettle(s => ({ ...s, cash_gold: e.target.value }))}
-              className="highlight"
-              style={{ ...monoStyle, fontSize: 16 }}
-              placeholder={`Owed: ${netPureOwed.toFixed(3)}g`}
-            />
-          </div>
+          <div
+  style={{
+    display: 'grid',
+    gridTemplateColumns: '1fr 180px',
+    gap: 12,
+    alignItems: 'end',
+    marginBottom: 14,
+  }}
+>
+  <div className="form-group" style={{ marginBottom: 0 }}>
+    <label>Pure Gold Given to Customer (g)</label>
+    <input
+      type="number"
+      step="0.001"
+      min="0"
+      value={settle.cash_gold}
+      onChange={e => setSettle(s => ({ ...s, cash_gold: e.target.value }))}
+      className="highlight"
+      style={{ ...monoStyle, fontSize: 16 }}
+      placeholder={`Owed: ${netPureOwed.toFixed(3)}g`}
+    />
+  </div>
+
+  <div className="form-group" style={{ marginBottom: 0 }}>
+    <label>Settlement Type</label>
+    <select
+      value={settle.mode}
+      onChange={e =>
+        setSettle(s => ({
+          ...s,
+          mode: e.target.value,
+          cash_given: ''
+        }))
+      }
+      className="highlight"
+    >
+      <option value="sales">Sales</option>
+      <option value="purchase">Purchase</option>
+    </select>
+  </div>
+</div>
 
           {/* ── Transaction result ── */}
           {settle.cash_gold !== '' && (
@@ -853,7 +1011,7 @@ export default function ExchangeVoucher() {
                     <div style={{ height: 1, background: 'var(--border)', margin: '2px 0' }} />
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
                       <span style={{ fontWeight: 600, color: 'var(--blue)' }}>Extra gold (→ Sales OB)</span>
-                      <span style={{ ...monoStyle, fontWeight: 700, color: 'var(--blue)', fontSize: 15 }}>+{diff.toFixed(3)} g</span>
+                      <span style={{ ...monoStyle, fontWeight: 700, color: 'var(--blue)', fontSize: 15 }}>+{extraGold.toFixed(3)} g</span>
                     </div>
                   </>
                 )}
@@ -871,7 +1029,7 @@ export default function ExchangeVoucher() {
                     <div style={{ height: 1, background: 'var(--border)', margin: '2px 0' }} />
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                       <span style={{ color: 'var(--text-muted)' }}>Pending gold</span>
-                      <span style={{ ...monoStyle, color: 'var(--red)' }}>{Math.abs(diff).toFixed(3)} g</span>
+                      <span style={{ ...monoStyle, color: 'var(--red)' }}>{pendingGold.toFixed(3)} g</span>
                     </div>
                     {rate > 0 && (
                       <>
@@ -975,14 +1133,14 @@ export default function ExchangeVoucher() {
               {isSales && (
                 <div className="calc-row">
                   <span className="calc-label">Extra (→ Sales OB)</span>
-                  <span className="calc-value" style={{ color: 'var(--blue)' }}>+{diff.toFixed(3)} g</span>
+                  <span className="calc-value" style={{ color: 'var(--blue)' }}>+{extraGold.toFixed(3)} g</span>
                 </div>
               )}
               {isPurchase && (
                 <>
                   <div className="calc-row">
                     <span className="calc-label">Pending Gold</span>
-                    <span className="calc-value" style={{ color: 'var(--red)' }}>{Math.abs(diff).toFixed(3)} g</span>
+                    <span className="calc-value" style={{ color: 'var(--red)' }}>{pendingGold.toFixed(3)} g</span>
                   </div>
                   <div className="calc-row">
                     <span className="calc-label">Cash equivalent</span>

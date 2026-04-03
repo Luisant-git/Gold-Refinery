@@ -46,10 +46,15 @@ router.get('/customer-ob/:customerId', async (req, res) => {
   try {
     const pool = getPool();
     const vs = await pool.query(`
-      SELECT voucher_no, voucher_date, total_pure_wt, pure_wt_given,
-             COALESCE(cash_given,0) AS cash_given, COALESCE(rate_per_gram,0) AS rate_per_gram,
-             COALESCE(ob_skipped,0) AS ob_skipped, transaction_type
-      FROM exchange_vouchers WHERE customer_id=$1 ORDER BY created_at ASC`, [req.params.customerId]);
+    SELECT voucher_no, voucher_date, total_pure_wt, pure_wt_given,
+       COALESCE(balance_pure_wt,0) AS balance_pure_wt,
+       COALESCE(cash_given,0) AS cash_given,
+       COALESCE(rate_per_gram,0) AS rate_per_gram,
+       COALESCE(ob_skipped,0) AS ob_skipped,
+       transaction_type
+FROM exchange_vouchers
+WHERE customer_id=$1
+ORDER BY created_at ASC`, [req.params.customerId]);
     if (!vs.rows.length) return res.json({ success:true, ob_gold:0, ob_cash:0, has_history:false, ob_items:[] });
 
     // Walk ASC: accumulate running OB gold
@@ -60,26 +65,11 @@ router.get('/customer-ob/:customerId', async (req, res) => {
       const cashGiven = parseFloat(v.cash_given)    || 0;
       const rate      = parseFloat(v.rate_per_gram) || 0;
       const obSkipped = parseFloat(v.ob_skipped)    || 0;
-      const diff      = parseFloat((given - netOwed).toFixed(3)); // +ve = sales OB, -ve = purchase
+      const diff = parseFloat(v.balance_pure_wt) || 0;// +ve = sales OB, -ve = purchase
 
-      if (obSkipped > 0.001) {
-        // OB was skipped this voucher — carry it forward
-        runningOB += obSkipped;
-      } else if (diff > 0.001) {
-        // Extra gold given → Sales OB accumulates
-        runningOB += diff;
-      } else if (diff < -0.001) {
-        // Less gold given → purchase; check if cash settled
-        const pendingGold = Math.abs(diff);
-        const cashNeeded  = rate > 0 ? pendingGold * rate : 0;
-        if (cashGiven > 0 && cashNeeded > 0 && cashGiven >= cashNeeded * 0.99) {
-          // Cash settled — clear OB
-          runningOB = 0;
-        }
-        // else purchase not settled — OB unchanged
-      } else {
-        // NIL transaction — clear OB
-        runningOB = 0;
+      if (diff < -0.001) {
+        // Add current voucher pending balance
+        runningOB += Math.abs(diff);
       }
     }
 
@@ -96,22 +86,15 @@ router.get('/customer-ob/:customerId', async (req, res) => {
       const cashGiven = parseFloat(v.cash_given)    || 0;
       const rate      = parseFloat(v.rate_per_gram) || 0;
       const obSkipped = parseFloat(v.ob_skipped)    || 0;
-      const diff      = parseFloat((given - netOwed).toFixed(3));
+      const diff = parseFloat(v.balance_pure_wt) || 0;
 
-      if (obSkipped > 0.001) {
-        ob_items.push({ voucher_no:v.voucher_no, voucher_date:v.voucher_date, ob_amount:obSkipped });
-        tempOB += obSkipped;
-      } else if (diff > 0.001) {
-        ob_items.push({ voucher_no:v.voucher_no, voucher_date:v.voucher_date, ob_amount:diff });
-        tempOB += diff;
-      } else if (diff < -0.001) {
-        const pendingGold = Math.abs(diff);
-        const cashNeeded  = rate > 0 ? pendingGold * rate : 0;
-        if (cashGiven > 0 && cashNeeded > 0 && cashGiven >= cashNeeded * 0.99) {
-          ob_items.length = 0; tempOB = 0; // cleared
-        }
-      } else {
-        ob_items.length = 0; tempOB = 0; // NIL clears
+      if (diff < -0.001) {
+        ob_items.push({
+          voucher_no: v.voucher_no,
+          voucher_date: v.voucher_date,
+          ob_amount: Math.abs(diff)
+        });
+        tempOB += Math.abs(diff);
       }
     }
 
@@ -142,6 +125,194 @@ router.get('/', async (req, res) => {
   } catch(e) { res.json({ success:false, error:e.message }); }
 });
 
+
+// Update
+router.put('/:id', async (req, res) => {
+  const { voucherData: vd, items } = req.body;
+  const client = await getClient();
+
+  try {
+    await client.query('BEGIN');
+
+    const voucherId = req.params.id;
+
+    // Check existing voucher
+    const oldVoucherRes = await client.query(
+      `SELECT * FROM exchange_vouchers WHERE id = $1`,
+      [voucherId]
+    );
+
+    if (!oldVoucherRes.rows.length) {
+      await client.query('ROLLBACK');
+      return res.json({ success: false, error: 'Voucher not found' });
+    }
+
+    const oldVoucher = oldVoucherRes.rows[0];
+
+    // Old stock effect
+    const oldActualPure = parseFloat(oldVoucher.actual_pure_wt) || 0;
+    const oldPureGiven  = parseFloat(oldVoucher.pure_wt_given) || 0;
+    const oldNetEffect  = oldActualPure - oldPureGiven;
+
+    // Recompute totals from incoming items
+    const totalKatchaWt = items.reduce((s, i) => s + (parseFloat(i.katcha_wt) || 0), 0);
+    const totalPureWt   = items.reduce((s, i) => s + (parseFloat(i.pure_wt) || 0), 0);
+
+    const pureTouchVal   = parseFloat(vd.pure_touch) || 99.90;
+    const actualPureGold = parseFloat((totalPureWt / pureTouchVal * 100).toFixed(3));
+    const cashGoldGiven  = parseFloat(vd.pure_gold_given) || 0;
+    const cashForRem     = parseFloat(vd.cash_for_remaining) || 0;
+    const netPureOwed    = parseFloat((parseFloat(vd.total_pure_wt) || actualPureGold).toFixed(3));
+    const balancePure    = parseFloat((netPureOwed - cashGoldGiven).toFixed(3));
+
+    // Update voucher header
+    await client.query(`
+      UPDATE exchange_vouchers
+      SET
+        voucher_date      = $1,
+        customer_id       = $2,
+        mobile            = $3,
+        customer_name     = $4,
+        total_katcha_wt   = $5,
+        total_token_wt    = 0,
+        total_gross_wt    = $6,
+        actual_pure_wt    = $7,
+        total_pure_wt     = $8,
+        pure_wt_given     = $9,
+        cash_given        = $10,
+        balance_pure_wt   = $11,
+        rate_per_gram     = $12,
+        pure_touch        = $13,
+        transaction_type  = $14,
+        diff_gold         = $15,
+        ob_skipped        = $16,
+        remarks           = $17,
+        updated_at        = NOW()
+      WHERE id = $18
+    `, [
+      vd.voucher_date,
+      vd.customer_id || null,
+      vd.mobile,
+      vd.customer_name,
+      parseFloat(totalKatchaWt.toFixed(3)),
+      parseFloat(totalKatchaWt.toFixed(3)),
+      actualPureGold,
+      netPureOwed,
+      cashGoldGiven,
+      cashForRem,
+      balancePure,
+      parseFloat(vd.rate_per_gram) || 0,
+      pureTouchVal,
+      vd.transaction_type || 'nil',
+      parseFloat(vd.diff_gold) || 0,
+      parseFloat(vd.ob_skipped) || 0,
+      vd.remarks || null,
+      voucherId
+    ]);
+
+    // Delete old items
+    await client.query(`DELETE FROM exchange_voucher_items WHERE voucher_id = $1`, [voucherId]);
+
+    // Insert new items
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      await client.query(`
+        INSERT INTO exchange_voucher_items
+          (voucher_id, sno, token_no, katcha_wt, katcha_touch, less_touch, balance_touch, pure_wt)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      `, [
+        voucherId,
+        i + 1,
+        it.token_no || null,
+        parseFloat(it.katcha_wt) || 0,
+        parseFloat(it.katcha_touch) || 0,
+        parseFloat(it.less_touch) || 0,
+        parseFloat(it.balance_touch) || 0,
+        parseFloat(it.pure_wt) || 0
+      ]);
+    }
+
+    // Update stock ledger entry for this voucher
+    const newNetEffect = actualPureGold - cashGoldGiven;
+    const diffNet = newNetEffect - oldNetEffect;
+
+    // Update this voucher's stock ledger row
+    await client.query(`
+      UPDATE stock_ledger
+      SET
+        entry_date      = $1,
+        description     = $2,
+        dr_pure_wt      = $3,
+        cr_pure_wt      = $4
+      WHERE ref_type = 'exchange' AND ref_no = $5
+    `, [
+      vd.voucher_date,
+      `Exchange from ${vd.customer_name} (${vd.mobile})`,
+      actualPureGold,
+      cashGoldGiven,
+      oldVoucher.voucher_no
+    ]);
+
+    // Recalculate stock ledger balances from this row onward
+    const ledgerRowsRes = await client.query(`
+      SELECT id, dr_pure_wt, cr_pure_wt
+      FROM stock_ledger
+      WHERE id >= (
+        SELECT id FROM stock_ledger
+        WHERE ref_type = 'exchange' AND ref_no = $1
+        ORDER BY id ASC
+        LIMIT 1
+      )
+      ORDER BY id ASC
+    `, [oldVoucher.voucher_no]);
+
+    let previousBalance = 0;
+
+    const prevRowRes = await client.query(`
+      SELECT balance_pure_wt
+      FROM stock_ledger
+      WHERE id < (
+        SELECT id FROM stock_ledger
+        WHERE ref_type = 'exchange' AND ref_no = $1
+        ORDER BY id ASC
+        LIMIT 1
+      )
+      ORDER BY id DESC
+      LIMIT 1
+    `, [oldVoucher.voucher_no]);
+
+    if (prevRowRes.rows.length) {
+      previousBalance = parseFloat(prevRowRes.rows[0].balance_pure_wt) || 0;
+    }
+
+    for (const row of ledgerRowsRes.rows) {
+      const dr = parseFloat(row.dr_pure_wt) || 0;
+      const cr = parseFloat(row.cr_pure_wt) || 0;
+      const newBalance = previousBalance + dr - cr;
+
+      await client.query(
+        `UPDATE stock_ledger SET balance_pure_wt = $1 WHERE id = $2`,
+        [parseFloat(newBalance.toFixed(3)), row.id]
+      );
+
+      previousBalance = newBalance;
+    }
+
+    await client.query('COMMIT');
+
+    res.json({
+      success: true,
+      voucher_no: oldVoucher.voucher_no,
+      id: voucherId
+    });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.json({ success: false, error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
 // Get by id
 router.get('/:id', async (req, res) => {
   try {
@@ -167,7 +338,7 @@ router.post('/', async (req, res) => {
     const totalKatchaWt = items.reduce((s,i)=>s+(parseFloat(i.katcha_wt)||0),0);
     const totalPureWt   = items.reduce((s,i)=>s+(parseFloat(i.pure_wt)||0),0);
     const pureTouchVal  = parseFloat(vd.pure_touch)||99.90;
-    const actualPureGold= parseFloat((totalPureWt*pureTouchVal/100).toFixed(3));
+    const actualPureGold = parseFloat((totalPureWt / pureTouchVal * 100).toFixed(3)); 
     const cashGoldGiven = parseFloat(vd.pure_gold_given)||0;
     const cashForRem    = parseFloat(vd.cash_for_remaining)||0;
     const netPureOwed   = parseFloat((parseFloat(vd.total_pure_wt)||actualPureGold).toFixed(3));
