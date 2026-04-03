@@ -142,7 +142,7 @@ export default function ExchangeVoucher() {
   const [form, setForm] = useState({
     voucher_date: today,
     mobile: '', customer_name: '', customer_id: null,
-    rate_per_gram: '', pure_touch: '99.90', remarks: '',
+    rate_per_gram: '', pure_touch: '', remarks: '',
     ob_exchange_gold: 0,
     ob_exchange_cash: 0,
     ob_items: [],
@@ -229,13 +229,12 @@ useEffect(() => {
         }
       })
       .catch(() => { });
-
-    pureTokenAPI.getAll()
+      pureTokenAPI.getAll()
       .then(rows => {
         if (rows && rows.length > 0) {
           const tokenValue = rows[0]?.value || rows[0]?.pure_touch || rows[0]?.token || '';
           setDefaultPureTouch(tokenValue);
-          setForm(f => ({ ...f, pure_touch: tokenValue }));
+          setForm(f => ({ ...f, pure_touch: f.pure_touch || tokenValue }));
         }
       })
       .catch(() => { });
@@ -762,12 +761,13 @@ const isPurchase = settle.cash_gold !== '' && isPurchaseRaw && !purchaseCashSett
               Pure Touch
             </label>
             <input
-              type="number"
-              step="0.01"
-              value={form.pure_touch}
-              readOnly
-              style={{ width: 90, ...monoStyle, textAlign: 'right', background: '#F5F1E6' }}
-            />
+  type="number"
+  step="0.01"
+  value={form.pure_touch}
+  onChange={e => upForm('pure_touch', e.target.value)}
+  style={{ width: 90, ...monoStyle, textAlign: 'right' }}
+  className="highlight"
+/>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>%</span>
           </div>
 

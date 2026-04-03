@@ -39,7 +39,7 @@ export default function PrintReceipt({ voucher, type, onClose }) {
   const items = voucher.items || [];
   const date = fmtDate(voucher.voucher_date);
   const rate = parseFloat(voucher.rate_per_gram || 0);
-  const pureTouchVal = parseFloat(masterPureTouch || voucher.pure_touch || 99.90);
+  const pureTouchVal = parseFloat(voucher.pure_touch || masterPureTouch || 99.90);
   const actualPureWt = parseFloat(voucher.actual_pure_wt || voucher.total_pure_wt || 0);
   const netPureOwed = parseFloat(voucher.total_pure_wt || 0);
   const pureGoldGiven = parseFloat(voucher.pure_wt_given || 0);
@@ -296,7 +296,7 @@ export default function PrintReceipt({ voucher, type, onClose }) {
       </div>
       {rate > 0 && (
         <div>
-          RATE : ₹{rate.toLocaleString('en-IN')}/g &nbsp;&nbsp; MODE : {(voucher.payment_mode || 'cash').toUpperCase()}
+          RATE : ₹{rate.toLocaleString('en-IN')}/g 
         </div>
       )}
     </div>
