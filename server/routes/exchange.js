@@ -34,7 +34,10 @@ router.post('/fix-ob-skipped', async (req, res) => {
         } else {
           const pend=Math.abs(diff), cv=rate>0?pend*rate:0;
           if (cash>0&&cv>0&&cash>=cv*0.99) pendingOB=0;
-        }
+        }if (cash > 0 && rate > 0) {
+  const goldEquivalent = cash / rate;
+  pendingOB = Math.max(0, pendingOB - goldEquivalent);
+}
       }
     }
     res.json({ success:true, message:`Migration complete. Fixed ob_skipped on ${fixed} vouchers.`, fixed });
@@ -58,45 +61,72 @@ ORDER BY created_at ASC`, [req.params.customerId]);
     if (!vs.rows.length) return res.json({ success:true, ob_gold:0, ob_cash:0, has_history:false, ob_items:[] });
 
     // Walk ASC: accumulate running OB gold
-    let runningOB = 0;
-    for (const v of vs.rows) {
-      const netOwed   = parseFloat(v.total_pure_wt) || 0;
-      const given     = parseFloat(v.pure_wt_given) || 0;
-      const cashGiven = parseFloat(v.cash_given)    || 0;
-      const rate      = parseFloat(v.rate_per_gram) || 0;
-      const obSkipped = parseFloat(v.ob_skipped)    || 0;
-      const diff = parseFloat(v.balance_pure_wt) || 0;// +ve = sales OB, -ve = purchase
+ let runningOB = 0;
 
-      if (diff < -0.001) {
-        // Add current voucher pending balance
-        runningOB += Math.abs(diff);
-      }
-    }
+for (const v of vs.rows) {
+  const diff = parseFloat(v.balance_pure_wt) || 0;
+  const cash = parseFloat(v.cash_given) || 0;
+  const rate = parseFloat(v.rate_per_gram) || 0;
+
+  if (diff < -0.001) {
+    // Customer owes gold
+    runningOB += Math.abs(diff);
+  } 
+  else if (diff > 0.001) {
+    // Shop owes gold → reduce OB
+    runningOB -= diff;
+  }
+
+  // Cash clears OB
+  if (cash > 0 && rate > 0) {
+    const goldEquivalent = cash / rate;
+    runningOB -= goldEquivalent;
+  }
+
+  // Prevent negative
+  runningOB = Math.max(0, runningOB);
+}
+
+runningOB = parseFloat(runningOB.toFixed(3));
 
     runningOB = parseFloat(runningOB.toFixed(3));
 
     // Build ob_items from the sales OB vouchers that contributed to current runningOB
     // Re-walk to collect only the uncleared sales OB entries
-    const ob_items = [];
-    let tempOB = 0;
-    let cleared = false;
-    for (const v of vs.rows) {
-      const netOwed   = parseFloat(v.total_pure_wt) || 0;
-      const given     = parseFloat(v.pure_wt_given) || 0;
-      const cashGiven = parseFloat(v.cash_given)    || 0;
-      const rate      = parseFloat(v.rate_per_gram) || 0;
-      const obSkipped = parseFloat(v.ob_skipped)    || 0;
-      const diff = parseFloat(v.balance_pure_wt) || 0;
+const ob_items = [];
+let tempOB = 0;
 
-      if (diff < -0.001) {
-        ob_items.push({
-          voucher_no: v.voucher_no,
-          voucher_date: v.voucher_date,
-          ob_amount: Math.abs(diff)
-        });
-        tempOB += Math.abs(diff);
+for (const v of vs.rows) {
+  const diff = parseFloat(v.balance_pure_wt) || 0;
+
+  if (diff < -0.001) {
+    const amount = Math.abs(diff);
+    tempOB += amount;
+
+    ob_items.push({
+      voucher_no: v.voucher_no,
+      voucher_date: v.voucher_date,
+      ob_amount: amount
+    });
+  } 
+  else if (diff > 0.001) {
+    let reduce = diff;
+
+    while (reduce > 0 && ob_items.length) {
+      const first = ob_items[0];
+
+      if (first.ob_amount <= reduce) {
+        reduce -= first.ob_amount;
+        tempOB -= first.ob_amount;
+        ob_items.shift();
+      } else {
+        first.ob_amount -= reduce;
+        tempOB -= reduce;
+        reduce = 0;
       }
     }
+  }
+}
 
     res.json({ success:true, ob_gold:runningOB, ob_cash:0, has_history:true, ob_items });
   } catch(e) { res.json({ success:false, error:e.message }); }
@@ -159,56 +189,73 @@ router.put('/:id', async (req, res) => {
     const totalPureWt   = items.reduce((s, i) => s + (parseFloat(i.pure_wt) || 0), 0);
 
     const pureTouchVal   = parseFloat(vd.pure_touch) || 99.90;
-    const actualPureGold = parseFloat((totalPureWt / pureTouchVal * 100).toFixed(3));
-    const cashGoldGiven  = parseFloat(vd.pure_gold_given) || 0;
-    const cashForRem     = parseFloat(vd.cash_for_remaining) || 0;
-    const netPureOwed    = parseFloat((parseFloat(vd.total_pure_wt) || actualPureGold).toFixed(3));
-    const balancePure    = parseFloat((netPureOwed - cashGoldGiven).toFixed(3));
+const actualPureGold = parseFloat((totalPureWt / pureTouchVal * 100).toFixed(3));
+const cashGoldGiven  = parseFloat(vd.pure_gold_given) || 0;
+const cashForRem     = parseFloat(vd.cash_for_remaining) || 0;
+const netPureOwed    = parseFloat((parseFloat(vd.total_pure_wt) || actualPureGold).toFixed(3));
+const ratePerGram    = parseFloat(vd.rate_per_gram) || 0;
+
+const pendingGold = Math.max(0, parseFloat((netPureOwed - cashGoldGiven).toFixed(3)));
+const requiredCash = ratePerGram > 0
+  ? parseFloat((pendingGold * ratePerGram).toFixed(2))
+  : 0;
+
+const extraCash = Math.max(0, parseFloat((cashForRem - requiredCash).toFixed(2)));
+const settlementCash = Math.min(cashForRem, requiredCash);
+const cashGoldEquivalent = ratePerGram > 0
+  ? parseFloat((settlementCash / ratePerGram).toFixed(3))
+  : 0;
+
+const balancePure = Math.max(0, parseFloat((pendingGold - cashGoldEquivalent).toFixed(3)));
 
     // Update voucher header
     await client.query(`
       UPDATE exchange_vouchers
-      SET
-        voucher_date      = $1,
-        customer_id       = $2,
-        mobile            = $3,
-        customer_name     = $4,
-        total_katcha_wt   = $5,
-        total_token_wt    = 0,
-        total_gross_wt    = $6,
-        actual_pure_wt    = $7,
-        total_pure_wt     = $8,
-        pure_wt_given     = $9,
-        cash_given        = $10,
-        balance_pure_wt   = $11,
-        rate_per_gram     = $12,
-        pure_touch        = $13,
-        transaction_type  = $14,
-        diff_gold         = $15,
-        ob_skipped        = $16,
-        remarks           = $17,
-        updated_at        = NOW()
-      WHERE id = $18
-    `, [
-      vd.voucher_date,
-      vd.customer_id || null,
-      vd.mobile,
-      vd.customer_name,
-      parseFloat(totalKatchaWt.toFixed(3)),
-      parseFloat(totalKatchaWt.toFixed(3)),
-      actualPureGold,
-      netPureOwed,
-      cashGoldGiven,
-      cashForRem,
-      balancePure,
-      parseFloat(vd.rate_per_gram) || 0,
-      pureTouchVal,
-      vd.transaction_type || 'nil',
-      parseFloat(vd.diff_gold) || 0,
-      parseFloat(vd.ob_skipped) || 0,
-      vd.remarks || null,
-      voucherId
-    ]);
+SET
+  voucher_date      = $1,
+  customer_id       = $2,
+  mobile            = $3,
+  customer_name     = $4,
+  total_katcha_wt   = $5,
+  total_token_wt    = 0,
+  total_gross_wt    = $6,
+  actual_pure_wt    = $7,
+  total_pure_wt     = $8,
+  pure_wt_given     = $9,
+  cash_given        = $10,
+  balance_pure_wt   = $11,
+  rate_per_gram     = $12,
+  pure_touch        = $13,
+  transaction_type  = $14,
+  diff_gold         = $15,
+  ob_skipped        = $16,
+  required_cash     = $17,
+  extra_cash        = $18,
+  remarks           = $19,
+  updated_at        = NOW()
+WHERE id = $20
+    `,[
+  vd.voucher_date,
+  vd.customer_id || null,
+  vd.mobile,
+  vd.customer_name,
+  parseFloat(totalKatchaWt.toFixed(3)),
+  parseFloat(totalKatchaWt.toFixed(3)),
+  actualPureGold,
+  netPureOwed,
+  cashGoldGiven,
+  cashForRem,
+  balancePure,
+  ratePerGram,
+  pureTouchVal,
+  vd.transaction_type || 'nil',
+  parseFloat(vd.diff_gold) || 0,
+  parseFloat(vd.ob_skipped) || 0,
+  requiredCash,
+  extraCash,
+  vd.remarks || null,
+  voucherId
+]);
 
     // Delete old items
     await client.query(`DELETE FROM exchange_voucher_items WHERE voucher_id = $1`, [voucherId]);
@@ -335,29 +382,58 @@ router.post('/', async (req, res) => {
     const yr = new Date().getFullYear().toString().slice(-2);
     const voucherNo = `${prefix}${yr}${String(current_no).padStart(4,'0')}`;
     // Compute
-    const totalKatchaWt = items.reduce((s,i)=>s+(parseFloat(i.katcha_wt)||0),0);
-    const totalPureWt   = items.reduce((s,i)=>s+(parseFloat(i.pure_wt)||0),0);
-    const pureTouchVal  = parseFloat(vd.pure_touch)||99.90;
-    const actualPureGold = parseFloat((totalPureWt / pureTouchVal * 100).toFixed(3)); 
-    const cashGoldGiven = parseFloat(vd.pure_gold_given)||0;
-    const cashForRem    = parseFloat(vd.cash_for_remaining)||0;
-    const netPureOwed   = parseFloat((parseFloat(vd.total_pure_wt)||actualPureGold).toFixed(3));
-    const balancePure   = parseFloat((netPureOwed-cashGoldGiven).toFixed(3));
+ const totalKatchaWt = items.reduce((s,i)=>s+(parseFloat(i.katcha_wt)||0),0);
+const totalPureWt   = items.reduce((s,i)=>s+(parseFloat(i.pure_wt)||0),0);
+const pureTouchVal  = parseFloat(vd.pure_touch) || 99.90;
+const actualPureGold = parseFloat((totalPureWt / pureTouchVal * 100).toFixed(3));
+const cashGoldGiven = parseFloat(vd.pure_gold_given) || 0;
+const cashForRem    = parseFloat(vd.cash_for_remaining) || 0;
+const netPureOwed   = parseFloat((parseFloat(vd.total_pure_wt) || actualPureGold).toFixed(3));
+const ratePerGram   = parseFloat(vd.rate_per_gram) || 0;
+
+const pendingGold = Math.max(0, parseFloat((netPureOwed - cashGoldGiven).toFixed(3)));
+const requiredCash = ratePerGram > 0
+  ? parseFloat((pendingGold * ratePerGram).toFixed(2))
+  : 0;
+
+const extraCash = Math.max(0, parseFloat((cashForRem - requiredCash).toFixed(2)));
+const settlementCash = Math.min(cashForRem, requiredCash);
+const cashGoldEquivalent = ratePerGram > 0
+  ? parseFloat((settlementCash / ratePerGram).toFixed(3))
+  : 0;
+
+const balancePure = Math.max(0, parseFloat((pendingGold - cashGoldEquivalent).toFixed(3)));
     // Insert voucher
     const vRes = await client.query(`
-      INSERT INTO exchange_vouchers
-        (voucher_no,voucher_date,customer_id,mobile,customer_name,
-         total_katcha_wt,total_token_wt,total_gross_wt,actual_pure_wt,total_pure_wt,
-         pure_wt_given,cash_given,balance_pure_wt,rate_per_gram,
-         pure_touch,transaction_type,diff_gold,ob_skipped,remarks,status,created_at,updated_at)
-      VALUES ($1,$2,$3,$4,$5,$6,0,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,'completed',NOW(),NOW())
+   INSERT INTO exchange_vouchers
+  (voucher_no,voucher_date,customer_id,mobile,customer_name,
+   total_katcha_wt,total_token_wt,total_gross_wt,actual_pure_wt,total_pure_wt,
+   pure_wt_given,cash_given,balance_pure_wt,rate_per_gram,
+   pure_touch,transaction_type,diff_gold,ob_skipped,required_cash,extra_cash,remarks,status,created_at,updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,0,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'completed',NOW(),NOW())
       RETURNING id`,
-      [voucherNo,vd.voucher_date,vd.customer_id||null,vd.mobile,vd.customer_name,
-       parseFloat(totalKatchaWt.toFixed(3)),parseFloat(totalKatchaWt.toFixed(3)),
-       actualPureGold,netPureOwed,cashGoldGiven,cashForRem,balancePure,
-       parseFloat(vd.rate_per_gram)||0,pureTouchVal,
-       vd.transaction_type||'nil',parseFloat(vd.diff_gold)||0,
-       parseFloat(vd.ob_skipped)||0,vd.remarks||null]);
+     [
+  voucherNo,
+  vd.voucher_date,
+  vd.customer_id || null,
+  vd.mobile,
+  vd.customer_name,
+  parseFloat(totalKatchaWt.toFixed(3)),
+  parseFloat(totalKatchaWt.toFixed(3)),
+  actualPureGold,
+  netPureOwed,
+  cashGoldGiven,
+  cashForRem,
+  balancePure,
+  ratePerGram,
+  pureTouchVal,
+  vd.transaction_type || 'nil',
+  parseFloat(vd.diff_gold) || 0,
+  parseFloat(vd.ob_skipped) || 0,
+  requiredCash,
+  extraCash,
+  vd.remarks || null
+]);
     const voucherId = vRes.rows[0].id;
     // Insert items
     for (let i=0; i<items.length; i++) {

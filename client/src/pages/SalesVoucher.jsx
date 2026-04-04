@@ -1,8 +1,9 @@
 // client/src/pages/SalesVoucher.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { salesAPI, customerAPI, rateAPI } from '../db/api';
+import { salesAPI, customerAPI, rateAPI, exchangeAPI } from '../db/api';
 import PrintReceipt from '../components/PrintReceipt';
+import { fetchCustomerOB } from '../db/utils';
 
 // ── Reusable mobile autocomplete with keyboard nav ─────────────
 function MobileAC({ value, onChange, onSelect, onEnter }) {
@@ -101,11 +102,21 @@ export default function SalesVoucher() {
   const firstWtRef = useRef(null);   // ref to first weight input for auto-focus
   const monoStyle  = { fontFamily:'JetBrains Mono, monospace', fontWeight:600 };
 
-  const [form, setForm] = useState({
-    voucher_date: today, mobile:'', customer_name:'', customer_id:null,
-    rate_per_gram:'', deductions:'', payment_mode:'cash', remarks:'',
-    ob_cash:0, ob_items:[],
-  });
+const [form, setForm] = useState({
+  voucher_date: today,
+  mobile:'',
+  customer_name:'',
+  customer_id:null,
+  rate_per_gram:'',
+  deductions:'',
+  payment_mode:'cash',
+  remarks:'',
+  ob_cash:0,
+  ob_items:[],
+  exchange_ob_gold: 0,
+  exchange_ob_cash: 0,
+  exchange_ob_items: [],
+});
   const [items,      setItems]      = useState([{ ...EMPTY }]);
   const [lastSaved,  setLastSaved]  = useState(null);
   const [msg,        setMsg]        = useState(null);
@@ -121,13 +132,41 @@ export default function SalesVoucher() {
   const upForm = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   // Select customer → fetch sales OB from history
-  const onMobileSelect = async cust => {
-    setForm(f => ({ ...f, customer_name: cust.name, customer_id: cust.id, ob_cash: 0, ob_items: [] }));
-    try {
-      const ob = await salesAPI.getCustomerOB(cust.id);
-      if (ob.success) setForm(f => ({ ...f, ob_cash: ob.ob_cash, ob_items: ob.ob_items || [] }));
-    } catch(e) {}
-  };
+const onMobileSelect = async (cust) => {
+  setForm(f => ({
+    ...f,
+    mobile: cust.mobile,
+    customer_name: cust.name,
+    customer_id: cust.id,
+  }));
+
+  try {
+    const salesOb = await fetchCustomerOB(cust.id);
+    const exchangeOb = await exchangeAPI.getCustomerOB(cust.id);
+
+    console.log('Sales OB response:', salesOb);
+    console.log('Exchange OB response:', exchangeOb);
+
+    setForm(f => ({
+      ...f,
+      ob_cash: Number(salesOb?.ob_cash || 0),
+      ob_items: Array.isArray(salesOb?.ob_items) ? salesOb.ob_items : [],
+      exchange_ob_gold: Number(exchangeOb?.ob_gold || 0),
+      exchange_ob_cash: Number(exchangeOb?.ob_cash || 0),
+      exchange_ob_items: Array.isArray(exchangeOb?.ob_items) ? exchangeOb.ob_items : [],
+    }));
+  } catch (err) {
+    console.error('OB fetch failed:', err);
+    setForm(f => ({
+      ...f,
+      ob_cash: 0,
+      ob_items: [],
+      exchange_ob_gold: 0,
+      exchange_ob_cash: 0,
+      exchange_ob_items: [],
+    }));
+  }
+};
 
   // Auto-focus first weight field after customer selection
   const focusFirstWt = () => {
@@ -160,11 +199,19 @@ export default function SalesVoucher() {
     }));
   }, [form.rate_per_gram]);
 
+  // const totalAmt   = items.reduce((s,r) => s + (parseFloat(r.amount) || 0), 0);
+  // const totalWt    = items.reduce((s,r) => s + (parseFloat(r.weight) || 0), 0);
+  // const deductions = parseFloat(form.deductions) || 0;
+  // const netAmount  = parseFloat((totalAmt - deductions).toFixed(2));
+  // const obCash     = parseFloat(form.ob_cash) || 0;
+
   const totalAmt   = items.reduce((s,r) => s + (parseFloat(r.amount) || 0), 0);
-  const totalWt    = items.reduce((s,r) => s + (parseFloat(r.weight) || 0), 0);
-  const deductions = parseFloat(form.deductions) || 0;
-  const netAmount  = parseFloat((totalAmt - deductions).toFixed(2));
-  const obCash     = parseFloat(form.ob_cash) || 0;
+const totalWt    = items.reduce((s,r) => s + (parseFloat(r.weight) || 0), 0);
+const deductions = parseFloat(form.deductions) || 0;
+const roundedTotalAmt = Math.floor(totalAmt / 10) * 10;
+const rawNetAmount = totalAmt - deductions;
+const netAmount = Math.floor(rawNetAmount / 10) * 10;
+const obCash     = parseFloat(form.ob_cash) || 0;
 
   const handleSave = async () => {
     if (!form.mobile || !form.customer_name) { setMsg({ type:'danger', text:'Mobile and name required' }); return; }
@@ -188,7 +235,7 @@ export default function SalesVoucher() {
         amount: r.amount,
       }));
       const result = await salesAPI.create(
-        { ...form, customer_id: custId, amount_paid: netAmount, gross_amount: totalAmt },
+        { ...form, customer_id: custId, amount_paid: netAmount, gross_amount: roundedTotalAmt },
         apiItems
       );
       setMsg({ type:'success', text:`Sales Voucher ${result.voucher_no} saved! Net: ₹${netAmount.toLocaleString('en-IN')}` });
@@ -199,14 +246,26 @@ export default function SalesVoucher() {
     setSaving(false);
   };
 
-  const handleClear = () => {
-    setLastSaved(null);
-    setForm({ voucher_date: today, mobile:'', customer_name:'', customer_id:null,
-      rate_per_gram: latestRate?.rate_24k || '', deductions:'', payment_mode:'cash',
-      remarks:'', ob_cash:0, ob_items:[] });
-    setItems([{ ...EMPTY }]); setMsg(null);
-  };
-
+ const handleClear = () => {
+  setLastSaved(null);
+  setForm({
+    voucher_date: today,
+    mobile:'',
+    customer_name:'',
+    customer_id:null,
+    rate_per_gram: latestRate?.rate_24k || '',
+    deductions:'',
+    payment_mode:'cash',
+    remarks:'',
+    ob_cash:0,
+    ob_items:[],
+    exchange_ob_gold: 0,
+    exchange_ob_cash: 0,
+    exchange_ob_items: [],
+  });
+  setItems([{ ...EMPTY }]);
+  setMsg(null);
+};
   return (
     <div className="page">
       <div className="page-header">
@@ -259,6 +318,103 @@ export default function SalesVoucher() {
               <div style={{ fontSize:11, fontWeight:700, letterSpacing:1, color:'var(--text-muted)', textTransform:'uppercase', marginRight:6 }}>
                 Sales Opening Balance
               </div>
+              {form.customer_id && form.exchange_ob_gold > 0 && (
+  <div style={{
+    marginTop: 12,
+    borderRadius: 8,
+    overflow:'hidden',
+    background: 'linear-gradient(90deg, #F5F0E6, #EEE8D8)',
+    border: '1.5px solid rgba(184,134,11,0.3)',
+  }}>
+    <div style={{
+      padding:'10px 16px',
+      display:'flex',
+      alignItems:'center',
+      gap:10,
+      flexWrap:'wrap',
+      borderBottom: (form.exchange_ob_items || []).length > 0 ? '1px dashed rgba(184,134,11,0.3)' : 'none'
+    }}>
+      <div style={{
+        fontSize:11,
+        fontWeight:700,
+        letterSpacing:1,
+        color:'var(--text-muted)',
+        textTransform:'uppercase',
+        marginRight:6
+      }}>
+        Exchange Opening Balance
+      </div>
+
+      <div style={{
+        display:'flex',
+        alignItems:'center',
+        gap:8,
+        padding:'5px 14px',
+        borderRadius:6,
+        background:'rgba(184,50,50,0.08)',
+        border:'1.5px solid rgba(184,50,50,0.3)',
+      }}>
+        <span style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', letterSpacing:0.5 }}>
+          OB GOLD
+        </span>
+        <strong style={{ ...monoStyle, fontSize:17, color:'var(--red)' }}>
+          −{form.exchange_ob_gold.toFixed(3)} g
+        </strong>
+        <span style={{
+          fontSize:10,
+          color:'var(--red)',
+          fontWeight:700,
+          background:'rgba(184,50,50,0.1)',
+          padding:'2px 6px',
+          borderRadius:4
+        }}>
+          EXCHANGE OB
+        </span>
+      </div>
+    </div>
+
+    {(form.exchange_ob_items || []).length > 0 && (
+      <div style={{ padding:'8px 16px', display:'flex', flexDirection:'column', gap:4 }}>
+        {(form.exchange_ob_items || []).map((item, i) => (
+          <div key={i} style={{
+            display:'flex',
+            alignItems:'center',
+            gap:10,
+            padding:'4px 10px',
+            borderRadius:5,
+            background:'rgba(184,50,50,0.04)',
+            border:'1px solid rgba(184,50,50,0.15)',
+            fontSize:12,
+          }}>
+            <span style={{ ...monoStyle, fontSize:13, color:'var(--red)', minWidth:90 }}>
+              −{parseFloat(item.ob_amount || 0).toFixed(3)} g
+            </span>
+            <span style={{
+              fontSize:10,
+              fontWeight:700,
+              padding:'2px 7px',
+              borderRadius:4,
+              background:'rgba(184,50,50,0.12)',
+              color:'var(--red)'
+            }}>
+              EXCHANGE OB
+            </span>
+            <span style={{ ...monoStyle, fontSize:11, color:'var(--gold-dark)' }}>
+              #{item.voucher_no}
+            </span>
+            <span style={{ fontSize:11, color:'var(--text-muted)' }}>
+              {new Date(item.voucher_date).toLocaleDateString('en-IN', {
+                day:'2-digit',
+                month:'2-digit',
+                year:'numeric'
+              })}
+            </span>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+)}
               <div style={{
                 display:'flex', alignItems:'center', gap:8, padding:'5px 14px', borderRadius:6,
                 background: obCash > 0 ? 'rgba(26,80,128,0.08)' : 'rgba(0,0,0,0.04)',
@@ -357,9 +513,9 @@ export default function SalesVoucher() {
                 <td colSpan={2} style={{ textAlign:'right', fontSize:11 }}>TOTAL</td>
                 <td className="right">{totalWt > 0 ? totalWt.toFixed(3) : '—'}</td>
                 <td></td>
-                <td className="right" style={{ color:'var(--blue)' }}>
-                  {totalAmt > 0 ? `₹${totalAmt.toFixed(2)}` : '—'}
-                </td>
+              <td className="right" style={{ color:'var(--blue)' }}>
+  {totalAmt > 0 ? `₹${roundedTotalAmt.toLocaleString('en-IN')}` : '—'}
+</td>
                 <td></td>
               </tr>
             </tfoot>
@@ -401,7 +557,7 @@ export default function SalesVoucher() {
             </div>
             <div className="calc-row">
               <span className="calc-label">Gross Amount</span>
-              <span className="calc-value">₹{totalAmt.toFixed(2)}</span>
+             <span className="calc-value">₹{roundedTotalAmt.toLocaleString('en-IN')}</span>
             </div>
             {deductions > 0 && (
               <div className="calc-row">
@@ -418,7 +574,7 @@ export default function SalesVoucher() {
             <div className="calc-row total">
               <span className="calc-label">NET PAYABLE</span>
               <span className="calc-value big text-green">
-                ₹{netAmount.toLocaleString('en-IN', { minimumFractionDigits:2 })}
+                ₹{netAmount.toLocaleString('en-IN')}
               </span>
             </div>
           </div>

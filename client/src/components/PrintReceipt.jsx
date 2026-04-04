@@ -42,13 +42,17 @@ export default function PrintReceipt({ voucher, type, onClose }) {
   const pureTouchVal = parseFloat(voucher.pure_touch || masterPureTouch || 99.90);
   const actualPureWt = parseFloat(voucher.actual_pure_wt || voucher.total_pure_wt || 0);
   const netPureOwed = parseFloat(voucher.total_pure_wt || 0);
-  const pureGoldGiven = parseFloat(voucher.pure_wt_given || 0);
-  const cashGiven = parseFloat(voucher.cash_given || 0);
-  const balancePure = parseFloat(voucher.balance_pure_wt || 0);
+ const pureGoldGiven = parseFloat(voucher.pure_wt_given || 0);
+const cashGiven = parseFloat(voucher.cash_given || 0);
+const balancePure = parseFloat(voucher.balance_pure_wt || 0);
+const requiredCash = parseFloat(voucher.required_cash || 0);
+const extraCash = parseFloat(voucher.extra_cash || 0);
   const pureAfterTouch = parseFloat((actualPureWt * pureTouchVal / 100).toFixed(3));
   const hasOB = isExchange && Math.abs(netPureOwed - actualPureWt) > 0.001;
   const obAmount = hasOB ? parseFloat((actualPureWt - netPureOwed).toFixed(3)) : 0;
-  const isNilBalance = isExchange && Math.abs(balancePure) < 0.001;
+ const isNilBalance =
+  isExchange &&
+  Math.abs(balancePure) < 0.001;
   const totalKatcha = items.reduce((s, r) => s + (parseFloat(r.katcha_wt) || 0), 0);
   const totalWt = parseFloat(voucher.total_gross_wt || 0);
   const grossAmt = parseFloat(voucher.gross_amount || 0);
@@ -236,12 +240,26 @@ export default function PrintReceipt({ voucher, type, onClose }) {
                 {/* Pure gold given — removed from print */}
 
                 {/* Cash given */}
-                {cashGiven > 0 && (
-                  <div style={{ ...row }}>
-                    <span>CASH GIVEN</span>
-                    <span style={{ fontWeight: 'bold' }}>₹{cashGiven.toLocaleString('en-IN')}</span>
-                  </div>
-                )}
+               {requiredCash > 0 && (
+  <div style={{ ...row }}>
+    <span>REQUIRED CASH</span>
+    <span style={{ fontWeight: 'bold' }}>₹{requiredCash.toLocaleString('en-IN')}</span>
+  </div>
+)}
+
+{cashGiven > 0 && (
+  <div style={{ ...row }}>
+    <span>CASH GIVEN</span>
+    <span style={{ fontWeight: 'bold' }}>₹{cashGiven.toLocaleString('en-IN')}</span>
+  </div>
+)}
+
+{extraCash > 0 && (
+  <div style={{ ...row }}>
+    <span>EXTRA CASH</span>
+    <span style={{ fontWeight: 'bold' }}>₹{extraCash.toLocaleString('en-IN')}</span>
+  </div>
+)}
 
                 {/* Closing balance */}
                 <div style={{ borderTop: '1px solid #000', paddingTop: 4, marginTop: 4, ...row }}>
@@ -270,7 +288,7 @@ export default function PrintReceipt({ voucher, type, onClose }) {
     <div style={{ ...row, marginTop:4 }}>
       <span>GROSS AMOUNT</span>
       <span style={{ fontWeight:'bold' }}>
-        ₹{grossAmt.toLocaleString('en-IN', { minimumFractionDigits:2 })}
+       ₹{(Math.floor(grossAmt / 10) * 10).toLocaleString('en-IN')}
       </span>
     </div>
 
@@ -286,7 +304,7 @@ export default function PrintReceipt({ voucher, type, onClose }) {
         {isSales ? 'NET PAYABLE TO CUSTOMER' : 'AMOUNT TO PAY'}
       </span>
       <span style={{ fontWeight:'bold', fontSize:13 }}>
-        ₹{netAmt.toLocaleString('en-IN', { minimumFractionDigits:2 })}
+       ₹{(Math.floor(netAmt / 10) * 10).toLocaleString('en-IN')}
       </span>
     </div>
 

@@ -27,3 +27,22 @@ export function fmtDateInput(val) {
     return d.toISOString().split('T')[0];
   } catch { return ''; }
 }
+
+export const fetchCustomerOB = async (customerId) => {
+  try {
+    const ob = await exchangeAPI.getCustomerOB(customerId);
+
+    if (ob?.success) {
+      return {
+        ob_gold: Number(ob.ob_gold ?? ob.ob_exchange_gold ?? 0),
+        ob_cash: Number(ob.ob_cash ?? ob.ob_exchange_cash ?? 0),
+        ob_items: Array.isArray(ob.ob_items) ? ob.ob_items : [],
+      };
+    }
+
+    return { ob_gold: 0, ob_cash: 0, ob_items: [] };
+  } catch (e) {
+    console.error('OB fetch error:', e);
+    return { ob_gold: 0, ob_cash: 0, ob_items: [] };
+  }
+};

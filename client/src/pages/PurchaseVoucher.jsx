@@ -1,8 +1,9 @@
 // client/src/pages/PurchaseVoucher.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { purchaseAPI, customerAPI, rateAPI } from '../db/api';
+import { purchaseAPI, customerAPI, rateAPI, exchangeAPI } from '../db/api';
 import PrintReceipt from '../components/PrintReceipt';
+import { fetchCustomerOB } from '../db/utils';
 
 function MobileAC({ value, onChange, onSelect, onEnter }) {
   const [sugg, setSugg] = useState([]);
@@ -10,6 +11,7 @@ function MobileAC({ value, onChange, onSelect, onEnter }) {
   const [idx,  setIdx]  = useState(-1);
   const ref     = useRef(null);
   const listRef = useRef(null);
+  const roundTo10 = (val) => Math.floor((parseFloat(val) || 0) / 10) * 10;
 
   useEffect(() => {
     const h = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
@@ -98,16 +100,30 @@ export default function PurchaseVoucher() {
   const firstWtRef = useRef(null);
   const monoStyle  = { fontFamily:'JetBrains Mono, monospace', fontWeight:600 };
 
-  const [form, setForm] = useState({
-    voucher_date: today, mobile:'', customer_name:'', customer_id:null,
-    rate_per_gram:'', deductions:'', payment_mode:'cash', remarks:'',
-    ob_cash:0, ob_items:[],
-  });
+const [form, setForm] = useState({
+  voucher_date: today,
+  mobile:'',
+  customer_name:'',
+  customer_id:null,
+  rate_per_gram:'',
+  deductions:'',
+  payment_mode:'cash',
+  remarks:'',
+  ob_cash:0,
+  ob_items:[],
+  exchange_ob_gold: 0,
+  exchange_ob_cash: 0,
+  exchange_ob_items: [],
+});
   const [items,      setItems]      = useState([{ ...EMPTY }]);
   const [lastSaved,  setLastSaved]  = useState(null);
   const [msg,        setMsg]        = useState(null);
   const [saving,     setSaving]     = useState(false);
   const [latestRate, setLatestRate] = useState(null);
+
+  const roundTo10 = (val) => {
+  return Math.floor((parseFloat(val) || 0) / 10) * 10;
+};
 
   useEffect(() => {
     rateAPI.getLatest()
@@ -117,13 +133,43 @@ export default function PurchaseVoucher() {
 
   const upForm = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  const onMobileSelect = async cust => {
-    setForm(f => ({ ...f, customer_name: cust.name, customer_id: cust.id, ob_cash:0, ob_items:[] }));
-    try {
-      const ob = await purchaseAPI.getCustomerOB(cust.id);
-      if (ob.success) setForm(f => ({ ...f, ob_cash: ob.ob_cash, ob_items: ob.ob_items || [] }));
-    } catch(e) {}
-  };
+//fetch customer OB on mobile or name change
+
+const onMobileSelect = async (cust) => {
+  setForm(f => ({
+    ...f,
+    mobile: cust.mobile,
+    customer_name: cust.name,
+    customer_id: cust.id,
+  }));
+
+  try {
+    const purchaseOb = await fetchCustomerOB(cust.id);
+    const exchangeOb = await exchangeAPI.getCustomerOB(cust.id);
+
+    console.log('Purchase OB response:', purchaseOb);
+    console.log('Exchange OB response:', exchangeOb);
+
+    setForm(f => ({
+      ...f,
+      ob_cash: Number(purchaseOb?.ob_cash || 0),
+      ob_items: Array.isArray(purchaseOb?.ob_items) ? purchaseOb.ob_items : [],
+      exchange_ob_gold: Number(exchangeOb?.ob_gold || 0),
+      exchange_ob_cash: Number(exchangeOb?.ob_cash || 0),
+      exchange_ob_items: Array.isArray(exchangeOb?.ob_items) ? exchangeOb.ob_items : [],
+    }));
+  } catch (err) {
+    console.error('OB fetch failed:', err);
+    setForm(f => ({
+      ...f,
+      ob_cash: 0,
+      ob_items: [],
+      exchange_ob_gold: 0,
+      exchange_ob_cash: 0,
+      exchange_ob_items: [],
+    }));
+  }
+};
 
   const focusFirstWt = () => { if (firstWtRef.current) firstWtRef.current.focus(); };
 
@@ -178,24 +224,36 @@ export default function PurchaseVoucher() {
         amount: r.amount,
       }));
       const result = await purchaseAPI.create(
-        { ...form, customer_id: custId, amount_paid: netAmount, gross_amount: totalAmt },
+        { ...form, customer_id: custId, amount_paid: roundTo10(netAmount), gross_amount: totalAmt },
         apiItems
       );
-      setMsg({ type:'success', text:`Purchase Voucher ${result.voucher_no} saved! Paying: ₹${netAmount.toLocaleString('en-IN')}` });
+      setMsg({ type:'success', text:`Purchase Voucher ${result.voucher_no} saved! Paying: ₹${roundTo10(netAmount).toLocaleString('en-IN')}` });
       const full = await purchaseAPI.getById(result.id).catch(() => null);
       setLastSaved(full);
       setTimeout(() => { handleClear(); setMsg(null); }, 8000);
     } catch(e) { setMsg({ type:'danger', text: e.message }); }
     setSaving(false);
   };
-
-  const handleClear = () => {
-    setLastSaved(null);
-    setForm({ voucher_date: today, mobile:'', customer_name:'', customer_id:null,
-      rate_per_gram: latestRate?.rate_24k || '', deductions:'', payment_mode:'cash',
-      remarks:'', ob_cash:0, ob_items:[] });
-    setItems([{ ...EMPTY }]); setMsg(null);
-  };
+const handleClear = () => {
+  setLastSaved(null);
+  setForm({
+    voucher_date: today,
+    mobile:'',
+    customer_name:'',
+    customer_id:null,
+    rate_per_gram: latestRate?.rate_24k || '',
+    deductions:'',
+    payment_mode:'cash',
+    remarks:'',
+    ob_cash:0,
+    ob_items:[],
+    exchange_ob_gold: 0,
+    exchange_ob_cash: 0,
+    exchange_ob_items: [],
+  });
+  setItems([{ ...EMPTY }]);
+  setMsg(null);
+};
 
   return (
     <div className="page">
@@ -249,6 +307,103 @@ export default function PurchaseVoucher() {
               <div style={{ fontSize:11, fontWeight:700, letterSpacing:1, color:'var(--text-muted)', textTransform:'uppercase', marginRight:6 }}>
                 Purchase Opening Balance
               </div>
+              {form.customer_id && form.exchange_ob_gold > 0 && (
+  <div style={{
+    marginTop: 12,
+    borderRadius: 8,
+    overflow:'hidden',
+    background: 'linear-gradient(90deg, #F5F0E6, #EEE8D8)',
+    border: '1.5px solid rgba(184,134,11,0.3)',
+  }}>
+    <div style={{
+      padding:'10px 16px',
+      display:'flex',
+      alignItems:'center',
+      gap:10,
+      flexWrap:'wrap',
+      borderBottom: (form.exchange_ob_items || []).length > 0 ? '1px dashed rgba(184,134,11,0.3)' : 'none'
+    }}>
+      <div style={{
+        fontSize:11,
+        fontWeight:700,
+        letterSpacing:1,
+        color:'var(--text-muted)',
+        textTransform:'uppercase',
+        marginRight:6
+      }}>
+        Exchange Opening Balance
+      </div>
+
+      <div style={{
+        display:'flex',
+        alignItems:'center',
+        gap:8,
+        padding:'5px 14px',
+        borderRadius:6,
+        background:'rgba(184,50,50,0.08)',
+        border:'1.5px solid rgba(184,50,50,0.3)',
+      }}>
+        <span style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', letterSpacing:0.5 }}>
+          OB GOLD
+        </span>
+        <strong style={{ ...monoStyle, fontSize:17, color:'var(--red)' }}>
+          −{form.exchange_ob_gold.toFixed(3)} g
+        </strong>
+        <span style={{
+          fontSize:10,
+          color:'var(--red)',
+          fontWeight:700,
+          background:'rgba(184,50,50,0.1)',
+          padding:'2px 6px',
+          borderRadius:4
+        }}>
+          EXCHANGE OB
+        </span>
+      </div>
+    </div>
+
+    {(form.exchange_ob_items || []).length > 0 && (
+      <div style={{ padding:'8px 16px', display:'flex', flexDirection:'column', gap:4 }}>
+        {(form.exchange_ob_items || []).map((item, i) => (
+          <div key={i} style={{
+            display:'flex',
+            alignItems:'center',
+            gap:10,
+            padding:'4px 10px',
+            borderRadius:5,
+            background:'rgba(184,50,50,0.04)',
+            border:'1px solid rgba(184,50,50,0.15)',
+            fontSize:12,
+          }}>
+            <span style={{ ...monoStyle, fontSize:13, color:'var(--red)', minWidth:90 }}>
+              −{parseFloat(item.ob_amount || 0).toFixed(3)} g
+            </span>
+            <span style={{
+              fontSize:10,
+              fontWeight:700,
+              padding:'2px 7px',
+              borderRadius:4,
+              background:'rgba(184,50,50,0.12)',
+              color:'var(--red)'
+            }}>
+              EXCHANGE OB
+            </span>
+            <span style={{ ...monoStyle, fontSize:11, color:'var(--gold-dark)' }}>
+              #{item.voucher_no}
+            </span>
+            <span style={{ fontSize:11, color:'var(--text-muted)' }}>
+              {new Date(item.voucher_date).toLocaleDateString('en-IN', {
+                day:'2-digit',
+                month:'2-digit',
+                year:'numeric'
+              })}
+            </span>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+)}
               <div style={{
                 display:'flex', alignItems:'center', gap:8, padding:'5px 14px', borderRadius:6,
                 background: obCash > 0 ? 'rgba(26,110,64,0.08)' : 'rgba(0,0,0,0.04)',
@@ -348,7 +503,7 @@ export default function PurchaseVoucher() {
                 <td className="right">{totalWt > 0 ? totalWt.toFixed(3) : '—'}</td>
                 <td></td>
                 <td className="right" style={{ color:'var(--green)' }}>
-                  {totalAmt > 0 ? `₹${totalAmt.toFixed(2)}` : '—'}
+                  {totalAmt > 0 ? `₹${roundTo10(totalAmt).toLocaleString('en-IN')}` : '—'}
                 </td>
                 <td></td>
               </tr>
@@ -391,7 +546,7 @@ export default function PurchaseVoucher() {
             </div>
             <div className="calc-row">
               <span className="calc-label">Gross Amount</span>
-              <span className="calc-value">₹{totalAmt.toFixed(2)}</span>
+              <span className="calc-value">₹{roundTo10(totalAmt).toLocaleString('en-IN')}</span>
             </div>
             {deductions > 0 && (
               <div className="calc-row">
@@ -408,7 +563,7 @@ export default function PurchaseVoucher() {
             <div className="calc-row total">
               <span className="calc-label">AMOUNT TO PAY</span>
               <span className="calc-value big text-green">
-                ₹{netAmount.toLocaleString('en-IN', { minimumFractionDigits:2 })}
+                ₹{roundTo10(netAmount).toLocaleString('en-IN')}
               </span>
             </div>
           </div>

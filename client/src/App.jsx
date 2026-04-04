@@ -16,6 +16,7 @@ import Settings         from './pages/Settings';
 import Login            from './pages/Login';
 import { dbStatus }     from './db/api';
 import PureTokenMaster from './pages/PureTokenMaster';
+import BankEntry from './pages/BankEntry';
 
 const NAV = [
   { to:'/',            label:'Dashboard',   icon:'◈' },
@@ -25,8 +26,9 @@ const NAV = [
   { to:'/processing',  label:'Processing',   icon:'⚙' },
   { to:'/stock',       label:'Stock',        icon:'▦' },
   { to:'/cash-entry',  label:'Cash Entry',   icon:'₹' },
+  { to:'/bank-entry', label:'Bank Entry', icon:'💰' },
   { to:'/gold-entry',  label:'Gold Entry',   icon:'⬡' },
-  { to:'/expenses',    label:'Expenses',     icon:'📋' },
+  { to:'/expenses',    label:'Expenses',     icon:'💳' },
   { to:'/vouchers',    label:'Voucher List', icon:'☰' },
   { to:'/customers',   label:'Customers',    icon:'◉' },
   { to:'/pure-token-master', label:'Pure Token Master', icon:'#' },
@@ -117,6 +119,7 @@ function Layout({ dbConnected, user, onLogout }) {
           <Route path="/processing"  element={<ProcessingReport />} />
           <Route path="/stock"       element={<StockReport />} />
           <Route path="/cash-entry"  element={<CashEntry />} />
+          <Route path="/bank-entry" element={<BankEntry />} />
           <Route path="/gold-entry"  element={<GoldEntry />} />
           <Route path="/expenses"    element={<Expenses />} />
           <Route path="/vouchers"    element={<VoucherList />} />

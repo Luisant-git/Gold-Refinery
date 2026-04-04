@@ -18,6 +18,7 @@ export default function VoucherList() {
   const [printDetail, setPrintDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState(null);
+  const roundTo10 = (val) => Math.floor((parseFloat(val) || 0) / 10) * 10;
 
   useEffect(() => { load(); }, [activeTab]);
 
@@ -104,7 +105,7 @@ export default function VoucherList() {
             { label: 'Vouchers', value: vouchers.length, unit: '' },
             { label: 'Total Gross Wt', value: totalGross.toFixed(3), unit: 'g' },
             { label: 'Total Pure Wt', value: totalPure.toFixed(3), unit: 'g' },
-            ...(activeTab !== 'exchange' ? [{ label: 'Total Amount', value: `₹${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, unit: '' }] : []),
+            ...(activeTab !== 'exchange' ? [{ label: 'Total Amount', value: `₹${roundTo10(totalAmount).toLocaleString('en-IN')}`, unit: '' }] : []),
           ].map((s, i) => (
             <div key={i} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, padding: '9px 14px', flex: 1 }}>
               <div style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 3 }}>{s.label}</div>
@@ -145,7 +146,7 @@ export default function VoucherList() {
                         <td className="right td-number">{parseFloat(v.total_gross_wt || 0).toFixed(3)}</td>
                         <td className="right td-number">{pureWt.toFixed(3)}</td>
                         {activeTab !== 'exchange' && (
-                          <td className="right td-number">₹{parseFloat(v.net_amount || 0).toLocaleString('en-IN')}</td>
+                          <td className="right td-number">₹{roundTo10(v.net_amount).toLocaleString('en-IN')}</td>
                         )}
                         {activeTab === 'exchange' && (
                           <td className="right td-number" style={{
@@ -195,7 +196,7 @@ export default function VoucherList() {
                     <td colSpan={4}>{vouchers.length} vouchers</td>
                     <td className="right">{totalGross.toFixed(3)}</td>
                     <td className="right">{totalPure.toFixed(3)}</td>
-                    {activeTab !== 'exchange' && <td className="right">₹{totalAmount.toLocaleString('en-IN')}</td>}
+                    {activeTab !== 'exchange' && <td className="right">₹{roundTo10(totalAmount).toLocaleString('en-IN')}</td>}
                     {activeTab === 'exchange' && <td></td>}
                     <td colSpan={2}></td>
                   </tr>
@@ -336,35 +337,72 @@ export default function VoucherList() {
                     <>
                       <div className="calc-row">
                         <span className="calc-label">Net Pure Owed</span>
-                        <span className="calc-value">{parseFloat(detail.total_pure_wt || 0).toFixed(3)} g</span>
+                        <span className="calc-value">
+                          {parseFloat(detail.total_pure_wt || 0).toFixed(3)} g
+                        </span>
                       </div>
+
                       <div className="calc-row">
                         <span className="calc-label">Pure Gold Given</span>
                         <span className="calc-value" style={{ color: 'var(--gold-dark)', fontWeight: 700 }}>
                           {parseFloat(detail.pure_wt_given || 0).toFixed(3)} g
                         </span>
                       </div>
+
+                      <div className="calc-row">
+                        <span className="calc-label">Required Cash</span>
+                        <span className="calc-value">
+                          ₹{parseFloat(detail.required_cash || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+
                       <div className="calc-row">
                         <span className="calc-label">Cash Paid</span>
-                        <span className="calc-value">₹{parseFloat(detail.cash_given || 0).toFixed(2)}</span>
+                        <span className="calc-value">
+                          ₹{parseFloat(detail.cash_given || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </span>
                       </div>
+
+                      {parseFloat(detail.extra_cash || 0) > 0 && (
+                        <div className="calc-row">
+                          <span className="calc-label" style={{ color: 'var(--red)', fontWeight: 700 }}>
+                            Extra Cash Given
+                          </span>
+                          <span className="calc-value" style={{ color: 'var(--red)', fontWeight: 700 }}>
+                            ₹{parseFloat(detail.extra_cash || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      )}
+
                       <div className="calc-row total">
                         <span className="calc-label">Balance</span>
                         <span className="calc-value big" style={{
-                          color: parseFloat(detail.balance_pure_wt || 0) > 0.001 ? 'var(--red)'
-                            : parseFloat(detail.balance_pure_wt || 0) < -0.001 ? 'var(--blue)'
+                          color: parseFloat(detail.balance_pure_wt || 0) > 0.001
+                            ? 'var(--red)'
+                            : parseFloat(detail.balance_pure_wt || 0) < -0.001
+                              ? 'var(--blue)'
                               : 'var(--green)'
                         }}>
                           {parseFloat(detail.balance_pure_wt || 0).toFixed(3)} g
                         </span>
                       </div>
-                      {detail.transaction_type && detail.transaction_type !== 'nil' && (
+
+                      {detail.transaction_type && (
                         <div className="calc-row">
                           <span className="calc-label">Settlement Type</span>
-                          <span className={`badge ${detail.transaction_type === 'sales' ? 'badge-info' : 'badge-warning'}`}>
+                          <span className={`badge ${detail.transaction_type === 'sales'
+                              ? 'badge-info'
+                              : detail.transaction_type === 'purchase'
+                                ? 'badge-warning'
+                                : 'badge-success'
+                            }`}>
                             {detail.transaction_type === 'sales'
                               ? 'SALES OB (Extra gold given)'
-                              : 'CASH SETTLED (Less gold + cash)'}
+                              : detail.transaction_type === 'purchase'
+                                ? 'PURCHASE (Less gold given)'
+                                : parseFloat(detail.extra_cash || 0) > 0
+                                  ? 'NIL (Settled with extra cash)'
+                                  : 'NIL (Fully settled)'}
                           </span>
                         </div>
                       )}
@@ -373,7 +411,7 @@ export default function VoucherList() {
                     <>
                       <div className="calc-row">
                         <span className="calc-label">Net Amount</span>
-                        <span className="calc-value big">₹{parseFloat(detail.net_amount || 0).toLocaleString('en-IN')}</span>
+                        <span className="calc-value big">₹{roundTo10(detail.net_amount).toLocaleString('en-IN')}</span>
                       </div>
                       <div className="calc-row">
                         <span className="calc-label">Payment Mode</span>

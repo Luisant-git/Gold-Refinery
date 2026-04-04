@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { exchangeAPI, customerAPI, rateAPI, pureTokenAPI } from '../db/api';
 import PrintReceipt from '../components/PrintReceipt';
-import {  useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 
 const EMPTY_ROW = { token_no: '', katcha_wt: '', katcha_touch: '', less_touch: '', balance_touch: '', pure_wt: '' };
 
@@ -163,38 +163,38 @@ export default function ExchangeVoucher() {
   });
 
 
-const [searchParams] = useSearchParams();
-const editId = searchParams.get('edit');
-//edit 
-useEffect(() => {
-  if (!editId) return;
+  const [searchParams] = useSearchParams();
+  const editId = searchParams.get('edit');
+  //edit 
+  useEffect(() => {
+    if (!editId) return;
 
-  const loadVoucherForEdit = async () => {
-    try {
-      const data = await exchangeAPI.getById(editId);
-      if (!data) return;
+    const loadVoucherForEdit = async () => {
+      try {
+        const data = await exchangeAPI.getById(editId);
+        if (!data) return;
 
-      setVoucherNo(data.voucher_no || '—');
+        setVoucherNo(data.voucher_no || '—');
 
-      setForm({
-        voucher_date: data.voucher_date || today,
-        mobile: data.mobile || '',
-        customer_name: data.customer_name || '',
-        customer_id: data.customer_id || null,
-        rate_per_gram: data.rate_per_gram || '',
-        pure_touch: data.pure_touch || defaultPureTouch || '',
-        remarks: data.remarks || '',
-        ob_exchange_gold: data.ob_exchange_gold || 0,
-        ob_exchange_cash: data.ob_exchange_cash || 0,
-        ob_items: data.ob_items || [],
-        ob_last_voucher: data.ob_last_voucher || null,
-        ob_last_date: data.ob_last_date || null,
-        ob_tx_type: data.ob_tx_type || null,
-      });
+        setForm({
+          voucher_date: data.voucher_date || today,
+          mobile: data.mobile || '',
+          customer_name: data.customer_name || '',
+          customer_id: data.customer_id || null,
+          rate_per_gram: data.rate_per_gram || '',
+          pure_touch: data.pure_touch || defaultPureTouch || '',
+          remarks: data.remarks || '',
+          ob_exchange_gold: data.ob_exchange_gold || 0,
+          ob_exchange_cash: data.ob_exchange_cash || 0,
+          ob_items: data.ob_items || [],
+          ob_last_voucher: data.ob_last_voucher || null,
+          ob_last_date: data.ob_last_date || null,
+          ob_tx_type: data.ob_tx_type || null,
+        });
 
-      setItems(
-        data.items && data.items.length > 0
-          ? data.items.map(item => ({
+        setItems(
+          data.items && data.items.length > 0
+            ? data.items.map(item => ({
               token_no: item.token_no || '',
               katcha_wt: item.katcha_wt || '',
               katcha_touch: item.katcha_touch || '',
@@ -202,23 +202,23 @@ useEffect(() => {
               balance_touch: item.balance_touch || '',
               pure_wt: item.pure_wt || '',
             }))
-          : [{ ...EMPTY_ROW }]
-      );
+            : [{ ...EMPTY_ROW }]
+        );
 
-      setSettle({
-        mode: data.transaction_type || 'purchase',
-        cash_gold: data.pure_gold_given || '',
-        use_ob: data.ob_skipped ? false : true,
-        cash_given: data.cash_for_remaining || '',
-      });
-    } catch (e) {
-      console.error('Edit load failed:', e);
-      setMsg({ type: 'danger', text: 'Failed to load voucher for edit' });
-    }
-  };
+        setSettle({
+          mode: data.transaction_type || 'purchase',
+          cash_gold: data.pure_gold_given || '',
+          use_ob: data.ob_skipped ? false : true,
+          cash_given: data.cash_for_remaining || '',
+        });
+      } catch (e) {
+        console.error('Edit load failed:', e);
+        setMsg({ type: 'danger', text: 'Failed to load voucher for edit' });
+      }
+    };
 
-  loadVoucherForEdit();
-}, [editId, defaultPureTouch]);
+    loadVoucherForEdit();
+  }, [editId, defaultPureTouch]);
   // On mount: load latest rate AND pre-fetch next voucher number
   useEffect(() => {
     rateAPI.getLatest()
@@ -229,7 +229,7 @@ useEffect(() => {
         }
       })
       .catch(() => { });
-      pureTokenAPI.getAll()
+    pureTokenAPI.getAll()
       .then(rows => {
         if (rows && rows.length > 0) {
           const tokenValue = rows[0]?.value || rows[0]?.pure_touch || rows[0]?.token || '';
@@ -248,36 +248,37 @@ useEffect(() => {
 
   // Called when user selects a customer from dropdown
   const onMobileSelect = async cust => {
-    console.log('Selected customer:', cust);
-  
-    // Set immediate customer details first
     setForm(f => ({
       ...f,
-      mobile: cust.mobile || f.mobile,
+      mobile: cust.mobile || '',
       customer_name: cust.name || '',
       customer_id: cust.id || null,
-      ob_exchange_gold: Number(cust.ob_exchange_gold || 0),
-      ob_exchange_cash: Number(cust.ob_exchange_cash || 0),
+      ob_exchange_gold: 0,
+      ob_exchange_cash: 0,
       ob_items: [],
     }));
-  
+
     try {
       const ob = await exchangeAPI.getCustomerOB(cust.id);
-      console.log('Customer OB response:', ob);
-  
-      if (ob?.success) {
-        setForm(f => ({
-          ...f,
-          mobile: cust.mobile || f.mobile,
-          customer_name: cust.name || f.customer_name,
-          customer_id: cust.id || f.customer_id,
-          ob_exchange_gold: Number(ob.ob_gold ?? ob.ob_exchange_gold ?? 0),
-          ob_exchange_cash: Number(ob.ob_cash ?? ob.ob_exchange_cash ?? 0),
-          ob_items: Array.isArray(ob.ob_items) ? ob.ob_items : [],
-        }));
-      }
-    } catch (e) {
-      console.error('OB fetch error:', e);
+      console.log('Exchange customer OB:', ob);
+
+      setForm(f => ({
+        ...f,
+        mobile: cust.mobile || '',
+        customer_name: cust.name || '',
+        customer_id: cust.id || null,
+        ob_exchange_gold: Number(ob?.ob_gold ?? ob?.ob_exchange_gold ?? 0),
+        ob_exchange_cash: Number(ob?.ob_cash ?? ob?.ob_exchange_cash ?? 0),
+        ob_items: Array.isArray(ob?.ob_items) ? ob.ob_items : [],
+      }));
+    } catch (err) {
+      console.error('Exchange OB fetch failed:', err);
+      setForm(f => ({
+        ...f,
+        ob_exchange_gold: 0,
+        ob_exchange_cash: 0,
+        ob_items: [],
+      }));
     }
   };
 
@@ -330,37 +331,39 @@ useEffect(() => {
   }, [form.customer_id, form.customer_name, form.ob_exchange_gold, form.ob_exchange_cash, form.ob_items, obGold, obCash]);
 
   // Main difference
-// Main difference
-const diff = parseFloat((cashGold - netPureOwed).toFixed(3));
+  // Main difference
+  const diff = parseFloat((cashGold - netPureOwed).toFixed(3));
 
-// Helper values
-const pendingGold = Math.max(0, parseFloat((netPureOwed - cashGold).toFixed(3)));
-const extraGold = Math.max(0, parseFloat((cashGold - netPureOwed).toFixed(3)));
+  // Helper values
+  const pendingGold = Math.max(0, parseFloat((netPureOwed - cashGold).toFixed(3)));
+  const extraGold = Math.max(0, parseFloat((cashGold - netPureOwed).toFixed(3)));
 
-// Result based on actual numbers
-const isExact = settle.cash_gold !== '' && Math.abs(diff) < 0.001;
-const isSalesRaw = settle.cash_gold !== '' && diff > 0.001;
-const isPurchaseRaw = settle.cash_gold !== '' && diff < -0.001;
+  // Result based on actual numbers
+  const isExact = settle.cash_gold !== '' && Math.abs(diff) < 0.001;
+  const isSalesRaw = settle.cash_gold !== '' && diff > 0.001;
+  const isPurchaseRaw = settle.cash_gold !== '' && diff < -0.001;
 
-// Purchase cash calc
-const cashForPurchase =
-  isPurchaseRaw && pendingGold > 0 && rate > 0
-    ? parseFloat((pendingGold * rate).toFixed(2))
-    : 0;
+  // Purchase cash calc
+  const cashForPurchase =
+    isPurchaseRaw && pendingGold > 0 && rate > 0
+      ? parseFloat((pendingGold * rate).toFixed(2))
+      : 0;
 
-const cashRounded = Math.round(cashForPurchase);
-const cashBalance = parseFloat((cashRounded - cashGiven).toFixed(2));
+  const cashRounded = Math.round(cashForPurchase);
+  const cashBalance = parseFloat((cashRounded - cashGiven).toFixed(2));
+  const extraCash = Math.max(0, parseFloat((cashGiven - cashRounded).toFixed(2)));
+  const pendingCash = Math.max(0, parseFloat((cashRounded - cashGiven).toFixed(2)));
 
-const purchaseCashSettled =
-  isPurchaseRaw &&
-  pendingGold > 0 &&
-  cashGiven > 0 &&
-  cashGiven >= cashForPurchase * 0.99;
+  const purchaseCashSettled =
+    isPurchaseRaw &&
+    pendingGold > 0 &&
+    cashGiven > 0 &&
+    cashGiven >= cashForPurchase * 0.99;
 
-// Final UI states
-const isNil = settle.cash_gold !== '' && (isExact || purchaseCashSettled);
-const isSales = settle.cash_gold !== '' && isSalesRaw;
-const isPurchase = settle.cash_gold !== '' && isPurchaseRaw && !purchaseCashSettled;
+  // Final UI states
+  const isNil = settle.cash_gold !== '' && (isExact || purchaseCashSettled);
+  const isSales = settle.cash_gold !== '' && isSalesRaw;
+  const isPurchase = settle.cash_gold !== '' && isPurchaseRaw && !purchaseCashSettled;
 
   const monoStyle = { fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 };
 
@@ -389,7 +392,7 @@ const isPurchase = settle.cash_gold !== '' && isPurchaseRaw && !purchaseCashSett
       } else if (actualDiff < -0.001) {
         finalTxType = purchaseCashSettled ? 'nil' : 'purchase';
       }
-      
+
       const vData = {
         ...form,
         customer_id: custId,
@@ -403,8 +406,8 @@ const isPurchase = settle.cash_gold !== '' && isPurchaseRaw && !purchaseCashSett
         ob_skipped: useOB ? 0 : obGold,
       };
       const result = editId
-  ? await exchangeAPI.update(editId, vData, valid)
-  : await exchangeAPI.create(vData, valid);
+        ? await exchangeAPI.update(editId, vData, valid)
+        : await exchangeAPI.create(vData, valid);
       // Fetch full voucher for print
       const full = await exchangeAPI.getById(result.id).catch(() => null);
       setLastSaved(full);
@@ -432,7 +435,7 @@ const isPurchase = settle.cash_gold !== '' && isPurchaseRaw && !purchaseCashSett
     setItems([{ ...EMPTY_ROW }]);
     setSettle({ mode: 'purchase', cash_gold: '', use_ob: true, cash_given: '' });
     setMsg(null);
-    exchangeAPI.getNextNo().then(no => setVoucherNo(no)).catch(() => {});
+    exchangeAPI.getNextNo().then(no => setVoucherNo(no)).catch(() => { });
   };
 
   // ── Render ───────────────────────────────────────────────────
@@ -582,7 +585,7 @@ const isPurchase = settle.cash_gold !== '' && isPurchaseRaw && !purchaseCashSett
                       fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 14,
                       color: 'var(--red)', minWidth: 90,
                     }}>
-                     −{parseFloat(item.ob_amount || 0).toFixed(3)} g
+                      −{parseFloat(item.ob_amount || 0).toFixed(3)} g
                     </strong>
 
                     {/* Label badge */}
@@ -761,13 +764,13 @@ const isPurchase = settle.cash_gold !== '' && isPurchaseRaw && !purchaseCashSett
               Pure Touch
             </label>
             <input
-  type="number"
-  step="0.01"
-  value={form.pure_touch}
-  onChange={e => upForm('pure_touch', e.target.value)}
-  style={{ width: 90, ...monoStyle, textAlign: 'right' }}
-  className="highlight"
-/>
+              type="number"
+              step="0.01"
+              value={form.pure_touch}
+              onChange={e => upForm('pure_touch', e.target.value)}
+              style={{ width: 90, ...monoStyle, textAlign: 'right' }}
+              className="highlight"
+            />
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>%</span>
           </div>
 
@@ -930,46 +933,46 @@ const isPurchase = settle.cash_gold !== '' && isPurchaseRaw && !purchaseCashSett
 
           {/* ── Pure Gold Given input ── */}
           <div
-  style={{
-    display: 'grid',
-    gridTemplateColumns: '1fr 180px',
-    gap: 12,
-    alignItems: 'end',
-    marginBottom: 14,
-  }}
->
-  <div className="form-group" style={{ marginBottom: 0 }}>
-    <label>Pure Gold Given to Customer (g)</label>
-    <input
-      type="number"
-      step="0.001"
-      min="0"
-      value={settle.cash_gold}
-      onChange={e => setSettle(s => ({ ...s, cash_gold: e.target.value }))}
-      className="highlight"
-      style={{ ...monoStyle, fontSize: 16 }}
-      placeholder={`Owed: ${netPureOwed.toFixed(3)}g`}
-    />
-  </div>
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 180px',
+              gap: 12,
+              alignItems: 'end',
+              marginBottom: 14,
+            }}
+          >
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Pure Gold Given to Customer (g)</label>
+              <input
+                type="number"
+                step="0.001"
+                min="0"
+                value={settle.cash_gold}
+                onChange={e => setSettle(s => ({ ...s, cash_gold: e.target.value }))}
+                className="highlight"
+                style={{ ...monoStyle, fontSize: 16 }}
+                placeholder={`Owed: ${netPureOwed.toFixed(3)}g`}
+              />
+            </div>
 
-  <div className="form-group" style={{ marginBottom: 0 }}>
-    <label>Settlement Type</label>
-    <select
-      value={settle.mode}
-      onChange={e =>
-        setSettle(s => ({
-          ...s,
-          mode: e.target.value,
-          cash_given: ''
-        }))
-      }
-      className="highlight"
-    >
-      <option value="sales">Sales</option>
-      <option value="purchase">Purchase</option>
-    </select>
-  </div>
-</div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Settlement Type</label>
+              <select
+                value={settle.mode}
+                onChange={e =>
+                  setSettle(s => ({
+                    ...s,
+                    mode: e.target.value,
+                    cash_given: ''
+                  }))
+                }
+                className="highlight"
+              >
+                <option value="sales">Sales</option>
+                <option value="purchase">Purchase</option>
+              </select>
+            </div>
+          </div>
 
           {/* ── Transaction result ── */}
           {settle.cash_gold !== '' && (
@@ -984,17 +987,58 @@ const isPurchase = settle.cash_gold !== '' && isPurchaseRaw && !purchaseCashSett
               }}>
                 <span style={{ fontSize: 18 }}>{isNil ? '✓' : isSales ? '📤' : '📥'}</span>
                 <strong style={{ fontSize: 14, fontWeight: 700, color: isNil ? 'var(--green)' : isSales ? 'var(--blue)' : 'var(--gold-dark)' }}>
-                  {isNil ? 'Transaction NIL — Balanced' : isSales ? 'SALES — Extra Gold Given' : 'PURCHASE — Less Gold Given'}
+                  {isNil
+                    ? (purchaseCashSettled && extraCash > 0
+                      ? 'Transaction NIL — Settled with Extra Cash'
+                      : 'Transaction NIL — Balanced')
+                    : isSales
+                      ? 'SALES — Extra Gold Given'
+                      : 'PURCHASE — Less Gold Given'}
                 </strong>
               </div>
 
               <div style={{ padding: '10px 14px', background: '#fff', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {isNil && (
-                  <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                    {purchaseCashSettled
-                      ? <>Gold given: <strong style={{ ...monoStyle, color: 'var(--gold-dark)' }}>{cashGold.toFixed(3)}g</strong> + Cash: <strong style={{ ...monoStyle, color: 'var(--green)' }}>₹{cashGiven.toLocaleString('en-IN')}</strong> — Fully settled. No OB carried forward.</>
-                      : <>Customer receives exactly <strong style={{ ...monoStyle, color: 'var(--green)' }}>{cashGold.toFixed(3)}g</strong>. No balance pending.</>
-                    }
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                      {purchaseCashSettled ? (
+                        <>
+                          Gold given: <strong style={{ ...monoStyle, color: 'var(--gold-dark)' }}>{cashGold.toFixed(3)}g</strong>
+                          {' + '}
+                          Cash: <strong style={{ ...monoStyle, color: 'var(--green)' }}>₹{cashGiven.toLocaleString('en-IN')}</strong>
+                          {' — Fully settled. No OB carried forward.'}
+                        </>
+                      ) : (
+                        <>
+                          Customer receives exactly <strong style={{ ...monoStyle, color: 'var(--green)' }}>{cashGold.toFixed(3)}g</strong>. No balance pending.
+                        </>
+                      )}
+                    </div>
+
+                    {purchaseCashSettled && (
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        fontSize: 13,
+                        padding: '6px 10px',
+                        borderRadius: 5,
+                        background: extraCash > 0 ? 'rgba(184,50,50,0.06)' : 'rgba(26,110,64,0.06)',
+                        border: `1px solid ${extraCash > 0 ? 'rgba(184,50,50,0.25)' : 'rgba(26,110,64,0.25)'}`,
+                      }}>
+                        <span style={{ fontWeight: 600, color: 'var(--text-muted)' }}>
+                          {extraCash > 0 ? 'Extra cash given' : 'Cash settlement'}
+                        </span>
+                        <span style={{
+                          ...monoStyle,
+                          fontWeight: 700,
+                          color: extraCash > 0 ? 'var(--red)' : 'var(--green)'
+                        }}>
+                          {extraCash > 0
+                            ? `₹${extraCash.toLocaleString('en-IN')}`
+                            : '₹0'}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1064,17 +1108,38 @@ const isPurchase = settle.cash_gold !== '' && isPurchaseRaw && !purchaseCashSett
                           <div style={{
                             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                             padding: '6px 10px', borderRadius: 5, marginTop: 4,
-                            background: Math.abs(cashBalance) < 1 ? 'rgba(26,110,64,0.06)' : cashBalance > 0 ? 'rgba(26,80,128,0.06)' : 'rgba(184,50,50,0.06)',
-                            border: `1px solid ${Math.abs(cashBalance) < 1 ? 'rgba(26,110,64,0.25)' : cashBalance > 0 ? 'rgba(26,80,128,0.2)' : 'rgba(184,50,50,0.25)'}`,
+                            background: pendingCash < 1 && extraCash < 1
+                              ? 'rgba(26,110,64,0.06)'
+                              : pendingCash > 0
+                                ? 'rgba(26,80,128,0.06)'
+                                : 'rgba(184,50,50,0.06)',
+                            border: `1px solid ${pendingCash < 1 && extraCash < 1
+                                ? 'rgba(26,110,64,0.25)'
+                                : pendingCash > 0
+                                  ? 'rgba(26,80,128,0.2)'
+                                  : 'rgba(184,50,50,0.25)'
+                              }`,
                           }}>
                             <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>
-                              {Math.abs(cashBalance) < 1 ? '✓ Cash settled' : cashBalance > 0 ? 'Cash balance pending' : 'Extra cash given'}
+                              {pendingCash < 1 && extraCash < 1
+                                ? '✓ Cash settled'
+                                : pendingCash > 0
+                                  ? 'Cash balance pending'
+                                  : 'Extra cash given'}
                             </span>
                             <span style={{
                               ...monoStyle, fontSize: 14, fontWeight: 700,
-                              color: Math.abs(cashBalance) < 1 ? 'var(--green)' : cashBalance > 0 ? 'var(--blue)' : 'var(--red)',
+                              color: pendingCash < 1 && extraCash < 1
+                                ? 'var(--green)'
+                                : pendingCash > 0
+                                  ? 'var(--blue)'
+                                  : 'var(--red)',
                             }}>
-                              {Math.abs(cashBalance) < 1 ? '₹0' : `₹${Math.abs(cashBalance).toLocaleString('en-IN')}`}
+                              {pendingCash < 1 && extraCash < 1
+                                ? '₹0'
+                                : pendingCash > 0
+                                  ? `₹${pendingCash.toLocaleString('en-IN')}`
+                                  : `₹${extraCash.toLocaleString('en-IN')}`}
                             </span>
                           </div>
                         )}
@@ -1162,12 +1227,24 @@ const isPurchase = settle.cash_gold !== '' && isPurchaseRaw && !purchaseCashSett
                       </div>
                       <div className="calc-row total">
                         <span className="calc-label">
-                          {Math.abs(cashBalance) < 1 ? 'CASH SETTLED ✓' : cashBalance > 0 ? 'CASH PENDING' : 'EXTRA CASH'}
+                          {pendingCash < 1 && extraCash < 1
+                            ? 'CASH SETTLED ✓'
+                            : pendingCash > 0
+                              ? 'CASH PENDING'
+                              : 'EXTRA CASH GIVEN'}
                         </span>
                         <span className="calc-value big" style={{
-                          color: Math.abs(cashBalance) < 1 ? 'var(--green)' : cashBalance > 0 ? 'var(--blue)' : 'var(--red)'
+                          color: pendingCash < 1 && extraCash < 1
+                            ? 'var(--green)'
+                            : pendingCash > 0
+                              ? 'var(--blue)'
+                              : 'var(--red)'
                         }}>
-                          {Math.abs(cashBalance) < 1 ? '₹0' : `₹${Math.abs(cashBalance).toLocaleString('en-IN')}`}
+                          {pendingCash < 1 && extraCash < 1
+                            ? '₹0'
+                            : pendingCash > 0
+                              ? `₹${pendingCash.toLocaleString('en-IN')}`
+                              : `₹${extraCash.toLocaleString('en-IN')}`}
                         </span>
                       </div>
                     </>
