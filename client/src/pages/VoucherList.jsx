@@ -136,7 +136,9 @@ export default function VoucherList() {
                 <tbody>
                   {vouchers.map(v => {
                     const pureWt = getPureWt(v);
-                    const balance = parseFloat(v.balance_pure_wt || 0);
+                  const balance = activeTab === 'exchange'
+  ? parseFloat(((parseFloat(v.total_pure_wt || 0) - parseFloat(v.pure_wt_given || 0))).toFixed(3))
+  : 0;
                     return (
                       <tr key={v.id}>
                         <td className="font-mono text-gold" style={{ fontSize: 12 }}>{v.voucher_no}</td>
@@ -316,6 +318,7 @@ export default function VoucherList() {
                           {parseFloat(detail.actual_pure_wt || detail.total_pure_wt || 0).toFixed(3)} g
                         </span>
                       </div>
+                     
                       {detail.pure_touch && (
                         <div className="calc-row">
                           <span className="calc-label">Pure Touch Applied</span>
@@ -331,7 +334,7 @@ export default function VoucherList() {
                     </div>
                   )}
                 </div>
-
+              
                 <div className="calc-box">
                   {activeTab === 'exchange' ? (
                     <>
@@ -362,6 +365,7 @@ export default function VoucherList() {
                           ₹{parseFloat(detail.cash_given || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </span>
                       </div>
+                     
 
                       {parseFloat(detail.extra_cash || 0) > 0 && (
                         <div className="calc-row">
@@ -374,27 +378,32 @@ export default function VoucherList() {
                         </div>
                       )}
 
-                      <div className="calc-row total">
-                        <span className="calc-label">Balance</span>
-                        <span className="calc-value big" style={{
-                          color: parseFloat(detail.balance_pure_wt || 0) > 0.001
-                            ? 'var(--red)'
-                            : parseFloat(detail.balance_pure_wt || 0) < -0.001
-                              ? 'var(--blue)'
-                              : 'var(--green)'
-                        }}>
-                          {parseFloat(detail.balance_pure_wt || 0).toFixed(3)} g
-                        </span>
-                      </div>
-
+<div className="calc-row total">
+  <span className="calc-label">Balance</span>
+  <span className="calc-value big" style={{
+    color: (
+      parseFloat(detail.total_pure_wt || 0) - parseFloat(detail.pure_wt_given || 0)
+    ) > 0.001
+      ? 'var(--red)'
+      : (
+        parseFloat(detail.total_pure_wt || 0) - parseFloat(detail.pure_wt_given || 0)
+      ) < -0.001
+        ? 'var(--blue)'
+        : 'var(--green)'
+  }}>
+    {(
+      parseFloat(detail.total_pure_wt || 0) - parseFloat(detail.pure_wt_given || 0)
+    ).toFixed(3)} g
+  </span>
+</div>
                       {detail.transaction_type && (
                         <div className="calc-row">
                           <span className="calc-label">Settlement Type</span>
                           <span className={`badge ${detail.transaction_type === 'sales'
-                              ? 'badge-info'
-                              : detail.transaction_type === 'purchase'
-                                ? 'badge-warning'
-                                : 'badge-success'
+                            ? 'badge-info'
+                            : detail.transaction_type === 'purchase'
+                              ? 'badge-warning'
+                              : 'badge-success'
                             }`}>
                             {detail.transaction_type === 'sales'
                               ? 'SALES OB (Extra gold given)'

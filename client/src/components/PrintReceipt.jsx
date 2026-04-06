@@ -15,13 +15,13 @@ export default function PrintReceipt({ voucher, type, onClose }) {
             rows[0]?.token ||
             rows[0]?.value ||
             '';
-  
+
           const touchValue =
             rows[0]?.touch ||
             rows[0]?.pure_touch ||
             rows[0]?.touch_value ||
             '';
-  
+
           setMasterPureToken(tokenValue);
           setMasterPureTouch(touchValue);
         }
@@ -42,17 +42,17 @@ export default function PrintReceipt({ voucher, type, onClose }) {
   const pureTouchVal = parseFloat(voucher.pure_touch || masterPureTouch || 99.90);
   const actualPureWt = parseFloat(voucher.actual_pure_wt || voucher.total_pure_wt || 0);
   const netPureOwed = parseFloat(voucher.total_pure_wt || 0);
- const pureGoldGiven = parseFloat(voucher.pure_wt_given || 0);
-const cashGiven = parseFloat(voucher.cash_given || 0);
-const balancePure = parseFloat(voucher.balance_pure_wt || 0);
-const requiredCash = parseFloat(voucher.required_cash || 0);
-const extraCash = parseFloat(voucher.extra_cash || 0);
+  const pureGoldGiven = parseFloat(voucher.pure_wt_given || 0);
+  const cashGiven = parseFloat(voucher.cash_given || 0);
+  const balancePure = parseFloat(voucher.balance_pure_wt || 0);
+  const requiredCash = parseFloat(voucher.required_cash || 0);
+  const extraCash = parseFloat(voucher.extra_cash || 0);
   const pureAfterTouch = parseFloat((actualPureWt * pureTouchVal / 100).toFixed(3));
   const hasOB = isExchange && Math.abs(netPureOwed - actualPureWt) > 0.001;
   const obAmount = hasOB ? parseFloat((actualPureWt - netPureOwed).toFixed(3)) : 0;
- const isNilBalance =
-  isExchange &&
-  Math.abs(balancePure) < 0.001;
+  const isNilBalance =
+    isExchange &&
+    Math.abs(balancePure) < 0.001;
   const totalKatcha = items.reduce((s, r) => s + (parseFloat(r.katcha_wt) || 0), 0);
   const totalWt = parseFloat(voucher.total_gross_wt || 0);
   const grossAmt = parseFloat(voucher.gross_amount || 0);
@@ -240,32 +240,34 @@ const extraCash = parseFloat(voucher.extra_cash || 0);
                 {/* Pure gold given — removed from print */}
 
                 {/* Cash given */}
-               {requiredCash > 0 && (
-  <div style={{ ...row }}>
-    <span>REQUIRED CASH</span>
-    <span style={{ fontWeight: 'bold' }}>₹{requiredCash.toLocaleString('en-IN')}</span>
-  </div>
-)}
+                {requiredCash > 0 && (
+                  <div style={{ ...row }}>
+                    <span>REQUIRED CASH</span>
+                    <span style={{ fontWeight: 'bold' }}>₹{requiredCash.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
 
-{cashGiven > 0 && (
-  <div style={{ ...row }}>
-    <span>CASH GIVEN</span>
-    <span style={{ fontWeight: 'bold' }}>₹{cashGiven.toLocaleString('en-IN')}</span>
-  </div>
-)}
+                {cashGiven > 0 && (
+                  <div style={{ ...row }}>
+                    <span>CASH GIVEN</span>
+                    <span style={{ fontWeight: 'bold' }}>₹{cashGiven.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
 
-{extraCash > 0 && (
-  <div style={{ ...row }}>
-    <span>EXTRA CASH</span>
-    <span style={{ fontWeight: 'bold' }}>₹{extraCash.toLocaleString('en-IN')}</span>
-  </div>
-)}
+                {extraCash > 0 && (
+                  <div style={{ ...row }}>
+                    <span>EXTRA CASH</span>
+                    <span style={{ fontWeight: 'bold' }}>₹{extraCash.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
 
                 {/* Closing balance */}
                 <div style={{ borderTop: '1px solid #000', paddingTop: 4, marginTop: 4, ...row }}>
                   <span>₹ &nbsp;&nbsp;&nbsp; CLOSING BALANCE</span>
                   <span style={{ fontWeight: 'bold' }}>
-                    {isNilBalance ? 'NIL' : `${Math.abs(balancePure).toFixed(3)} g`}
+                    {Math.abs(netPureOwed - pureGoldGiven) < 0.001
+                      ? 'NIL'
+                      : `${(netPureOwed - pureGoldGiven).toFixed(3)} g`}
                   </span>
                 </div>
 
@@ -279,47 +281,47 @@ const extraCash = parseFloat(voucher.extra_cash || 0);
 
             {/* ── SALES / PURCHASE SECTION ── */}
             {(isSales || isPurchase) && (
-  <div style={{ borderTop:'1px dashed #000', paddingTop:4, marginBottom:6 }}>
-    <div style={{ ...row, fontWeight:'bold' }}>
-      <span>{totalWt.toFixed(3)} Total</span>
-      <span>{totalPure.toFixed(3)}</span>
-    </div>
+              <div style={{ borderTop: '1px dashed #000', paddingTop: 4, marginBottom: 6 }}>
+                <div style={{ ...row, fontWeight: 'bold' }}>
+                  <span>{totalWt.toFixed(3)} Total</span>
+                  <span>{totalPure.toFixed(3)}</span>
+                </div>
 
-    <div style={{ ...row, marginTop:4 }}>
-      <span>GROSS AMOUNT</span>
-      <span style={{ fontWeight:'bold' }}>
-       ₹{(Math.floor(grossAmt / 10) * 10).toLocaleString('en-IN')}
-      </span>
-    </div>
+                <div style={{ ...row, marginTop: 4 }}>
+                  <span>GROSS AMOUNT</span>
+                  <span style={{ fontWeight: 'bold' }}>
+                    ₹{(Math.floor(grossAmt / 10) * 10).toLocaleString('en-IN')}
+                  </span>
+                </div>
 
-    {deductions > 0 && (
-      <div style={{ ...row }}>
-        <span>DEDUCTIONS</span>
-        <span>- ₹{deductions.toFixed(2)}</span>
-      </div>
-    )}
+                {deductions > 0 && (
+                  <div style={{ ...row }}>
+                    <span>DEDUCTIONS</span>
+                    <span>- ₹{deductions.toFixed(2)}</span>
+                  </div>
+                )}
 
-    <div style={{ borderTop:'1px solid #000', paddingTop:3, marginTop:4, ...row }}>
-      <span style={{ fontWeight:'bold' }}>
-        {isSales ? 'NET PAYABLE TO CUSTOMER' : 'AMOUNT TO PAY'}
-      </span>
-      <span style={{ fontWeight:'bold', fontSize:13 }}>
-       ₹{(Math.floor(netAmt / 10) * 10).toLocaleString('en-IN')}
-      </span>
-    </div>
+                <div style={{ borderTop: '1px solid #000', paddingTop: 3, marginTop: 4, ...row }}>
+                  <span style={{ fontWeight: 'bold' }}>
+                    {isSales ? 'NET PAYABLE TO CUSTOMER' : 'AMOUNT TO PAY'}
+                  </span>
+                  <span style={{ fontWeight: 'bold', fontSize: 13 }}>
+                    ₹{(Math.floor(netAmt / 10) * 10).toLocaleString('en-IN')}
+                  </span>
+                </div>
 
-    <div style={{ marginTop:6, fontSize:10 }}>
-      <div>
-        PURE TOKEN No. {masterPureToken || '—'} &nbsp;&nbsp; TOUCH : {pureTouchVal.toFixed(2)}
-      </div>
-      {rate > 0 && (
-        <div>
-          RATE : ₹{rate.toLocaleString('en-IN')}/g 
-        </div>
-      )}
-    </div>
-  </div>
-)}
+                <div style={{ marginTop: 6, fontSize: 10 }}>
+                  <div>
+                    PURE TOKEN No. {masterPureToken || '—'} &nbsp;&nbsp; TOUCH : {pureTouchVal.toFixed(2)}
+                  </div>
+                  {rate > 0 && (
+                    <div>
+                      RATE : ₹{rate.toLocaleString('en-IN')}/g
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             {/* Remarks — only if exists */}
             {voucher.remarks && (
               <div style={{ fontSize: 10, color: '#444', margin: '6px 0', borderTop: '1px dashed #ccc', paddingTop: 4 }}>

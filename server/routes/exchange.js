@@ -48,88 +48,105 @@ router.post('/fix-ob-skipped', async (req, res) => {
 router.get('/customer-ob/:customerId', async (req, res) => {
   try {
     const pool = getPool();
+
     const vs = await pool.query(`
-    SELECT voucher_no, voucher_date, total_pure_wt, pure_wt_given,
-       COALESCE(balance_pure_wt,0) AS balance_pure_wt,
-       COALESCE(cash_given,0) AS cash_given,
-       COALESCE(rate_per_gram,0) AS rate_per_gram,
-       COALESCE(ob_skipped,0) AS ob_skipped,
-       transaction_type
-FROM exchange_vouchers
-WHERE customer_id=$1
-ORDER BY created_at ASC`, [req.params.customerId]);
-    if (!vs.rows.length) return res.json({ success:true, ob_gold:0, ob_cash:0, has_history:false, ob_items:[] });
+      SELECT
+        voucher_no,
+        voucher_date,
+        COALESCE(actual_pure_wt, 0) AS actual_pure_wt,
+        COALESCE(total_pure_wt, 0) AS total_pure_wt,
+        COALESCE(pure_wt_given, 0) AS pure_wt_given,
+        COALESCE(diff_gold, 0) AS diff_gold,
+        COALESCE(cash_given, 0) AS cash_given,
+        COALESCE(rate_per_gram, 0) AS rate_per_gram,
+        COALESCE(ob_skipped, 0) AS ob_skipped,
+        transaction_type
+      FROM exchange_vouchers
+      WHERE customer_id = $1
+      ORDER BY created_at ASC
+    `, [req.params.customerId]);
 
-    // Walk ASC: accumulate running OB gold
- let runningOB = 0;
+    if (!vs.rows.length) {
+      return res.json({
+        success: true,
+        ob_gold: 0,
+        ob_cash: 0,
+        has_history: false,
+        ob_items: []
+      });
+    }
 
-for (const v of vs.rows) {
-  const diff = parseFloat(v.balance_pure_wt) || 0;
-  const cash = parseFloat(v.cash_given) || 0;
-  const rate = parseFloat(v.rate_per_gram) || 0;
+    let runningOB = 0;
+    const ob_items = [];
 
-  if (diff < -0.001) {
-    // Customer owes gold
-    runningOB += Math.abs(diff);
-  } 
-  else if (diff > 0.001) {
-    // Shop owes gold → reduce OB
-    runningOB -= diff;
-  }
+    for (const v of vs.rows) {
+      const txType = v.transaction_type;
+      const diffGold = parseFloat(v.diff_gold) || 0;
+      const cash = parseFloat(v.cash_given) || 0;
+      const rate = parseFloat(v.rate_per_gram) || 0;
+      const skipped = parseFloat(v.ob_skipped) || 0;
 
-  // Cash clears OB
-  if (cash > 0 && rate > 0) {
-    const goldEquivalent = cash / rate;
-    runningOB -= goldEquivalent;
-  }
+      // If previous OB was skipped in this voucher, bring it back first
+      if (skipped > 0.001) {
+        runningOB += skipped;
+        ob_items.push({
+          voucher_no: v.voucher_no,
+          voucher_date: v.voucher_date,
+          ob_amount: skipped
+        });
+      }
 
-  // Prevent negative
-  runningOB = Math.max(0, runningOB);
-}
+      // SALES: extra gold was given -> create new OB
+      if (txType === 'sales' && diffGold > 0.001) {
+        runningOB += diffGold;
 
-runningOB = parseFloat(runningOB.toFixed(3));
+        ob_items.push({
+          voucher_no: v.voucher_no,
+          voucher_date: v.voucher_date,
+          ob_amount: diffGold
+        });
+      }
+
+      // PURCHASE/NIL: if voucher used previous OB, reduce it
+      const actualPure = parseFloat(v.actual_pure_wt) || 0;
+      const totalPure = parseFloat(v.total_pure_wt) || 0;
+      const obApplied = Math.max(0, parseFloat((actualPure - totalPure).toFixed(3)));
+
+      if (obApplied > 0.001) {
+        let reduce = obApplied;
+
+        while (reduce > 0 && ob_items.length) {
+          const first = ob_items[0];
+
+          if (first.ob_amount <= reduce) {
+            reduce -= first.ob_amount;
+            runningOB -= first.ob_amount;
+            ob_items.shift();
+          } else {
+            first.ob_amount -= reduce;
+            runningOB -= reduce;
+            reduce = 0;
+          }
+        }
+      }
+
+      // If cash was used to settle pending gold, that should not affect sales OB gold
+      // so no deduction from runningOB here
+      runningOB = Math.max(0, runningOB);
+    }
 
     runningOB = parseFloat(runningOB.toFixed(3));
 
-    // Build ob_items from the sales OB vouchers that contributed to current runningOB
-    // Re-walk to collect only the uncleared sales OB entries
-const ob_items = [];
-let tempOB = 0;
-
-for (const v of vs.rows) {
-  const diff = parseFloat(v.balance_pure_wt) || 0;
-
-  if (diff < -0.001) {
-    const amount = Math.abs(diff);
-    tempOB += amount;
-
-    ob_items.push({
-      voucher_no: v.voucher_no,
-      voucher_date: v.voucher_date,
-      ob_amount: amount
+    res.json({
+      success: true,
+      ob_gold: runningOB,
+      ob_cash: 0,
+      has_history: true,
+      ob_items
     });
-  } 
-  else if (diff > 0.001) {
-    let reduce = diff;
-
-    while (reduce > 0 && ob_items.length) {
-      const first = ob_items[0];
-
-      if (first.ob_amount <= reduce) {
-        reduce -= first.ob_amount;
-        tempOB -= first.ob_amount;
-        ob_items.shift();
-      } else {
-        first.ob_amount -= reduce;
-        tempOB -= reduce;
-        reduce = 0;
-      }
-    }
+  } catch (e) {
+    res.json({ success: false, error: e.message });
   }
-}
-
-    res.json({ success:true, ob_gold:runningOB, ob_cash:0, has_history:true, ob_items });
-  } catch(e) { res.json({ success:false, error:e.message }); }
 });
 
 // Next voucher number
