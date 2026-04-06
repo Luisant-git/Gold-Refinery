@@ -3,6 +3,11 @@ const express = require('express');
 const router  = express.Router();
 const { getPool, getClient } = require('./db');
 
+const floorTo1Decimal = (num) => {
+  const n = parseFloat(num) || 0;
+  return Math.floor(n * 10) / 10;
+};
+
 // Fix ob_skipped retroactively
 router.post('/fix-ob-skipped', async (req, res) => {
   try {
@@ -206,7 +211,7 @@ router.put('/:id', async (req, res) => {
     const totalPureWt   = items.reduce((s, i) => s + (parseFloat(i.pure_wt) || 0), 0);
 
     const pureTouchVal   = parseFloat(vd.pure_touch) || 99.90;
-const actualPureGold = parseFloat((totalPureWt / pureTouchVal * 100).toFixed(3));
+const actualPureGold = floorTo1Decimal((totalPureWt / pureTouchVal) * 100);
 const cashGoldGiven  = parseFloat(vd.pure_gold_given) || 0;
 const cashForRem     = parseFloat(vd.cash_for_remaining) || 0;
 const netPureOwed    = parseFloat((parseFloat(vd.total_pure_wt) || actualPureGold).toFixed(3));
@@ -402,7 +407,7 @@ router.post('/', async (req, res) => {
  const totalKatchaWt = items.reduce((s,i)=>s+(parseFloat(i.katcha_wt)||0),0);
 const totalPureWt   = items.reduce((s,i)=>s+(parseFloat(i.pure_wt)||0),0);
 const pureTouchVal  = parseFloat(vd.pure_touch) || 99.90;
-const actualPureGold = parseFloat((totalPureWt / pureTouchVal * 100).toFixed(3));
+const actualPureGold = floorTo1Decimal((totalPureWt / pureTouchVal) * 100);
 const cashGoldGiven = parseFloat(vd.pure_gold_given) || 0;
 const cashForRem    = parseFloat(vd.cash_for_remaining) || 0;
 const netPureOwed   = parseFloat((parseFloat(vd.total_pure_wt) || actualPureGold).toFixed(3));

@@ -44,11 +44,15 @@ export default function VoucherList() {
     } catch (e) { setMsg({ type: 'danger', text: e.message }); }
   };
 
-  // For list: use actual_pure_wt if available (exchange), else total_pure_wt
-  const getPureWt = v => activeTab === 'exchange'
-    ? parseFloat(v.actual_pure_wt || v.total_pure_wt || 0)
-    : parseFloat(v.total_pure_wt || 0);
 
+  const floorTo1Decimal = (num) => {
+  const n = parseFloat(num) || 0;
+  return Math.floor(n * 10) / 10;
+};
+  // For list: use actual_pure_wt if available (exchange), else total_pure_wt
+ const getPureWt = v => activeTab === 'exchange'
+  ? floorTo1Decimal(parseFloat(v.actual_pure_gold || v.actual_pure_wt || v.total_pure_wt || 0))
+  : parseFloat(v.total_pure_wt || 0);
   const totalGross = vouchers.reduce((s, v) => s + (parseFloat(v.total_gross_wt) || 0), 0);
   const totalPure = vouchers.reduce((s, v) => s + getPureWt(v), 0);
   const totalAmount = vouchers.reduce((s, v) => s + (parseFloat(v.net_amount) || 0), 0);
@@ -104,7 +108,7 @@ export default function VoucherList() {
           {[
             { label: 'Vouchers', value: vouchers.length, unit: '' },
             { label: 'Total Gross Wt', value: totalGross.toFixed(3), unit: 'g' },
-            { label: 'Total Pure Wt', value: totalPure.toFixed(3), unit: 'g' },
+           { label: 'Total Pure Wt', value: activeTab === 'exchange' ? totalPure.toFixed(2) : totalPure.toFixed(3), unit: 'g' },
             ...(activeTab !== 'exchange' ? [{ label: 'Total Amount', value: `₹${roundTo10(totalAmount).toLocaleString('en-IN')}`, unit: '' }] : []),
           ].map((s, i) => (
             <div key={i} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, padding: '9px 14px', flex: 1 }}>
@@ -136,8 +140,11 @@ export default function VoucherList() {
                 <tbody>
                   {vouchers.map(v => {
                     const pureWt = getPureWt(v);
-                  const balance = activeTab === 'exchange'
-  ? parseFloat(((parseFloat(v.total_pure_wt || 0) - parseFloat(v.pure_wt_given || 0))).toFixed(3))
+ const balance = activeTab === 'exchange'
+  ? floorTo1Decimal(
+      parseFloat(v.total_pure_wt || 0) -
+      parseFloat(v.pure_wt_given || v.pure_gold_given || 0)
+    )
   : 0;
                     return (
                       <tr key={v.id}>
@@ -146,7 +153,9 @@ export default function VoucherList() {
                         <td className="font-mono" style={{ fontSize: 12 }}>{v.mobile}</td>
                         <td>{v.customer_name}</td>
                         <td className="right td-number">{parseFloat(v.total_gross_wt || 0).toFixed(3)}</td>
-                        <td className="right td-number">{pureWt.toFixed(3)}</td>
+                        <td className="right td-number">
+  {activeTab === 'exchange' ? pureWt.toFixed(2) : pureWt.toFixed(3)}
+</td>
                         {activeTab !== 'exchange' && (
                           <td className="right td-number">₹{roundTo10(v.net_amount).toLocaleString('en-IN')}</td>
                         )}
@@ -155,7 +164,7 @@ export default function VoucherList() {
                             color: balance > 0.001 ? 'var(--red)' : balance < -0.001 ? 'var(--blue)' : 'var(--green)',
                             fontWeight: 700,
                           }}>
-                            {balance.toFixed(3)}
+                           {balance.toFixed(2)}
                           </td>
                         )}
                         <td><span className="badge badge-success">{v.status || 'completed'}</span></td>
@@ -197,7 +206,7 @@ export default function VoucherList() {
                   <tr>
                     <td colSpan={4}>{vouchers.length} vouchers</td>
                     <td className="right">{totalGross.toFixed(3)}</td>
-                    <td className="right">{totalPure.toFixed(3)}</td>
+               <td className="right">{activeTab === 'exchange' ? totalPure.toFixed(2) : totalPure.toFixed(3)}</td>
                     {activeTab !== 'exchange' && <td className="right">₹{roundTo10(totalAmount).toLocaleString('en-IN')}</td>}
                     {activeTab === 'exchange' && <td></td>}
                     <td colSpan={2}></td>

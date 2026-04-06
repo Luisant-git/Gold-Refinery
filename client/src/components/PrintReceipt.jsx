@@ -36,20 +36,32 @@ export default function PrintReceipt({ voucher, type, onClose }) {
   const isSales = type === 'sales';
   const isPurchase = type === 'purchase';
 
+  const floorTo1Decimal = (num) => {
+  const n = parseFloat(num) || 0;
+  return Math.floor(n * 10) / 10;
+};
+
   const items = voucher.items || [];
   const date = fmtDate(voucher.voucher_date);
   const rate = parseFloat(voucher.rate_per_gram || 0);
   const pureTouchVal = parseFloat(voucher.pure_touch || masterPureTouch || 99.90);
-  const actualPureWt = parseFloat(voucher.actual_pure_wt || voucher.total_pure_wt || 0);
-  const netPureOwed = parseFloat(voucher.total_pure_wt || 0);
-  const pureGoldGiven = parseFloat(voucher.pure_wt_given || 0);
-  const cashGiven = parseFloat(voucher.cash_given || 0);
-  const balancePure = parseFloat(voucher.balance_pure_wt || 0);
-  const requiredCash = parseFloat(voucher.required_cash || 0);
-  const extraCash = parseFloat(voucher.extra_cash || 0);
-  const pureAfterTouch = parseFloat((actualPureWt * pureTouchVal / 100).toFixed(3));
-  const hasOB = isExchange && Math.abs(netPureOwed - actualPureWt) > 0.001;
-  const obAmount = hasOB ? parseFloat((actualPureWt - netPureOwed).toFixed(3)) : 0;
+  const actualPureWtRaw = parseFloat(
+  voucher.actual_pure_gold || voucher.actual_pure_wt || voucher.total_pure_wt || 0
+);
+const netPureOwedRaw = parseFloat(voucher.total_pure_wt || 0);
+
+const actualPureWt = floorTo1Decimal(actualPureWtRaw);
+const netPureOwed = floorTo1Decimal(netPureOwedRaw);
+
+const pureGoldGiven = parseFloat(voucher.pure_wt_given || voucher.pure_gold_given || 0);
+const cashGiven = parseFloat(voucher.cash_given || voucher.cash_for_remaining || 0);
+const balancePure = parseFloat(voucher.balance_pure_wt || 0);
+const requiredCash = parseFloat(voucher.required_cash || 0);
+const extraCash = parseFloat(voucher.extra_cash || 0);
+
+const pureAfterTouch = floorTo1Decimal((actualPureWt * pureTouchVal) / 100);
+const hasOB = isExchange && Math.abs(netPureOwed - actualPureWt) > 0.001;
+const obAmount = hasOB ? floorTo1Decimal(actualPureWt - netPureOwed) : 0;
   const isNilBalance =
     isExchange &&
     Math.abs(balancePure) < 0.001;
@@ -209,7 +221,7 @@ export default function PrintReceipt({ voucher, type, onClose }) {
                 {/* Total weight + pure row */}
                 <div style={{ ...row, fontWeight: 'bold' }}>
                   <span>{totalKatcha.toFixed(3)}  Total</span>
-                  <span>{actualPureWt.toFixed(3)}</span>
+                  <span>{actualPureWt.toFixed(2)}</span>
                 </div>
 
                 {/* OB — only if exists */}
@@ -217,7 +229,7 @@ export default function PrintReceipt({ voucher, type, onClose }) {
                   <div style={{ ...row }}>
                     <span style={{ paddingLeft: 20 }}>O.B</span>
                     <span style={{ fontWeight: 'bold' }}>
-                      {obAmount > 0 ? `- ${obAmount.toFixed(3)}` : `+ ${Math.abs(obAmount).toFixed(3)}`}
+                      {obAmount > 0 ? `- ${obAmount.toFixed(2)}` : `+ ${Math.abs(obAmount).toFixed(2)}`}
                     </span>
                   </div>
                 )}
@@ -225,15 +237,15 @@ export default function PrintReceipt({ voucher, type, onClose }) {
                 {/* Net pure line after OB */}
                 <div style={{ borderTop: '1px dashed #000', ...row, paddingTop: 3, fontWeight: 'bold' }}>
                   <span></span>
-                  <span>{netPureOwed.toFixed(3)}</span>
+                  <span>{netPureOwed.toFixed(2)}</span>
                 </div>
 
                 {/* PURE GOLD calc */}
                 <div style={{ marginTop: 6, marginBottom: 4 }}>
                   <div style={{ fontWeight: 'bold', fontSize: 12, marginBottom: 2 }}>PURE GOLD</div>
                   <div style={{ ...row }}>
-                    <span>{actualPureWt.toFixed(3)} </span>
-                    <span style={{ fontWeight: 'bold' }}>{pureAfterTouch.toFixed(3)}</span>
+                    <span>{actualPureWt.toFixed(2)} </span>
+<span style={{ fontWeight: 'bold' }}>{pureAfterTouch.toFixed(2)}</span>
                   </div>
                 </div>
 
@@ -267,7 +279,7 @@ export default function PrintReceipt({ voucher, type, onClose }) {
                   <span style={{ fontWeight: 'bold' }}>
                     {Math.abs(netPureOwed - pureGoldGiven) < 0.001
                       ? 'NIL'
-                      : `${(netPureOwed - pureGoldGiven).toFixed(3)} g`}
+                      : `${floorTo1Decimal(netPureOwed - pureGoldGiven).toFixed(2)} g`}
                   </span>
                 </div>
 
