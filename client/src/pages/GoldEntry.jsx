@@ -36,21 +36,71 @@ export default function GoldEntry() {
   const totalOut = list.filter(r=>r.entry_type==='OUT').reduce((s,r)=>s+(parseFloat(r.pure_wt)||0),0);
   const monoStyle={fontFamily:'JetBrains Mono, monospace',fontWeight:600};
 
-  const handleSave=async()=>{
-    if(!form.mobile||!form.customer_name){setMsg({type:'danger',text:'Mobile and name required'});return;}
-    if(!form.gold_wt||goldWt<=0){setMsg({type:'danger',text:'Gold weight required'});return;}
-    setSaving(true);setMsg(null);
-    try{
-      let custId=form.customer_id;
-      if(!custId){const res=await customerAPI.create({mobile:form.mobile,name:form.customer_name,ob_gold:0,ob_cash:0});custId=res.id;}
-      const r=await goldEntryAPI.create({...form,customer_id:custId});
-      setMsg({type:'success',text:`Gold Entry ${r.entry_no} saved! Pure: ${r.pure_wt}g`});
-      setForm({entry_date:today,mobile:'',customer_name:'',customer_id:null,gold_wt:'',touch:'99.90',entry_type:'OUT',remarks:''});
-      load();
-    }catch(e){setMsg({type:'danger',text:e.message});}
-    setSaving(false);
-  };
+  const handleSave = async () => {
+  if (!form.mobile || !form.customer_name) {
+    setMsg({ type: 'danger', text: 'Mobile and name required' });
+    return;
+  }
 
+  if (!form.gold_wt || goldWt <= 0) {
+    setMsg({ type: 'danger', text: 'Gold weight required' });
+    return;
+  }
+
+  setSaving(true);
+  setMsg(null);
+
+  try {
+    let custId = form.customer_id;
+
+    if (!custId) {
+      const res = await customerAPI.create({
+        mobile: form.mobile,
+        name: form.customer_name,
+        ob_gold: 0,
+        ob_cash: 0
+      });
+      custId = res.id;
+    }
+
+    // ✅ FIX: send cleaned numeric values
+const payload = {
+  entry_date: form.entry_date,
+  mobile: form.mobile,
+  customer_name: form.customer_name,
+  customer_id: custId,
+  entry_type: form.entry_type,
+  remarks: form.remarks,
+
+  weight: goldWt,
+  touch: touch,
+  pure_wt: pureWt
+};
+    const r = await goldEntryAPI.create(payload);
+
+    setMsg({
+      type: 'success',
+      text: `Gold Entry ${r.entry_no} saved! Pure: ${r.pure_wt}g`
+    });
+
+    setForm({
+      entry_date: today,
+      mobile: '',
+      customer_name: '',
+      customer_id: null,
+      gold_wt: '',
+      touch: '99.90',
+      entry_type: 'OUT',
+      remarks: ''
+    });
+
+    load();
+  } catch (e) {
+    setMsg({ type: 'danger', text: e.message });
+  }
+
+  setSaving(false);
+};
   return (
     <div className="page">
       <div className="page-header"><div className="page-title">GOLD ENTRY</div></div>
@@ -107,7 +157,7 @@ export default function GoldEntry() {
                 <td className="font-mono text-gold" style={{fontSize:12}}>{r.entry_no}</td>
                 <td>{r.customer_name}</td>
                 <td style={{fontSize:12}}>{r.mobile}</td>
-                <td className="right td-number">{parseFloat(r.gold_wt).toFixed(3)}</td>
+                <td className="right td-number">{parseFloat(r.weight).toFixed(3)}</td>
                 <td className="right td-number">{parseFloat(r.touch).toFixed(2)}</td>
                 <td className="right td-number" style={{color:'var(--green)'}}>{parseFloat(r.pure_wt).toFixed(3)}</td>
                 <td className="center"><span className={`badge ${r.entry_type==='IN'?'badge-success':'badge-danger'}`}>{r.entry_type}</span></td>
