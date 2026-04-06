@@ -1,19 +1,155 @@
 const express = require('express');
 const router  = express.Router();
 const { getPool } = require('./db');
+
+/* =========================
+   GET ALL GOLD ENTRIES
+========================= */
 router.get('/', async (req, res) => {
-  try { const r=await getPool().query(`SELECT * FROM gold_entries ORDER BY created_at DESC LIMIT 100`); res.json({ success:true, rows:r.rows }); }
-  catch(e) { res.json({ success:false, error:e.message }); }
-});
-router.post('/', async (req, res) => {
   try {
-    const d=req.body;
-    const seq=await getPool().query(`UPDATE voucher_sequences SET current_no=current_no+1 WHERE voucher_type='GOLD_ENTRY' RETURNING prefix,current_no`);
-    const {prefix,current_no}=seq.rows[0]; const yr=new Date().getFullYear().toString().slice(-2);
-    const no=`${prefix}${yr}${String(current_no).padStart(4,'0')}`;
-    const r=await getPool().query(`INSERT INTO gold_entries (entry_no,entry_date,customer_id,mobile,customer_name,entry_type,weight,touch,pure_wt,remarks,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW()) RETURNING id`,
-      [no,d.entry_date,d.customer_id||null,d.mobile,d.customer_name,d.entry_type,parseFloat(d.weight)||0,parseFloat(d.touch)||0,parseFloat(d.pure_wt)||0,d.remarks||null]);
-    res.json({ success:true, entry_no:no, id:r.rows[0].id });
-  } catch(e) { res.json({ success:false, error:e.message }); }
+    const r = await getPool().query(`
+      SELECT * 
+      FROM gold_entries 
+      ORDER BY created_at DESC 
+      LIMIT 100
+    `);
+
+    res.json({ success: true, rows: r.rows });
+
+  } catch (e) {
+    res.json({ success: false, error: e.message });
+  }
 });
+
+
+/* =========================
+   CREATE GOLD ENTRY
+========================= */
+router.post('/', async (req, res) => {
+  const client = await getPool().connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const d = req.body;
+
+    const type = (d.entry_type || '').toLowerCase();
+    const pureWt = parseFloat(d.pure_wt) || 0;
+    const entryDate = d.entry_date || new Date();
+
+    /* =========================
+       VALIDATION
+    ========================= */
+    if (!['in', 'out'].includes(type)) {
+      throw new Error('Invalid entry_type (must be in/out)');
+    }
+
+    if (pureWt <= 0) {
+      throw new Error('Pure weight must be greater than 0');
+    }
+
+    /* =========================
+       GET LAST STOCK BALANCE
+    ========================= */
+    let prevBalance = 0;
+
+    const last = await client.query(`
+      SELECT balance_pure_wt 
+      FROM stock_ledger 
+      ORDER BY id DESC 
+      LIMIT 1
+    `);
+
+    if (last.rows.length) {
+      prevBalance = parseFloat(last.rows[0].balance_pure_wt) || 0;
+    }
+
+    /* =========================
+       PREVENT NEGATIVE STOCK
+    ========================= */
+    if (type === 'out' && pureWt > prevBalance) {
+      throw new Error(`Insufficient stock. Available: ${prevBalance}`);
+    }
+
+    /* =========================
+       GENERATE ENTRY NUMBER
+    ========================= */
+    const seq = await client.query(`
+      UPDATE voucher_sequences 
+      SET current_no = current_no + 1 
+      WHERE voucher_type = 'GOLD_ENTRY' 
+      RETURNING prefix, current_no
+    `);
+
+    const { prefix, current_no } = seq.rows[0];
+    const yr = new Date().getFullYear().toString().slice(-2);
+    const entryNo = `${prefix}${yr}${String(current_no).padStart(4,'0')}`;
+
+    /* =========================
+       INSERT GOLD ENTRY
+    ========================= */
+    const insertGold = await client.query(`
+      INSERT INTO gold_entries 
+      (entry_no, entry_date, customer_id, mobile, customer_name, entry_type, weight, touch, pure_wt, remarks, created_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
+      RETURNING id
+    `, [
+      entryNo,
+      entryDate,
+      d.customer_id || null,
+      d.mobile,
+      d.customer_name,
+      type,
+      parseFloat(d.weight) || 0,
+      parseFloat(d.touch) || 0,
+      pureWt,
+      d.remarks || null
+    ]);
+
+    /* =========================
+       CALCULATE STOCK EFFECT
+    ========================= */
+    const dr = type === 'in' ? parseFloat(pureWt.toFixed(3)) : 0;
+    const cr = type === 'out' ? parseFloat(pureWt.toFixed(3)) : 0;
+
+    const newBalance = prevBalance + dr - cr;
+
+    /* =========================
+       INSERT STOCK LEDGER
+    ========================= */
+    await client.query(`
+      INSERT INTO stock_ledger
+      (entry_date, entry_type, ref_type, ref_no, description, dr_pure_wt, cr_pure_wt, balance_pure_wt, created_at)
+      VALUES ($1,'gold_entry','gold_entry',$2,$3,$4,$5,$6,NOW())
+    `, [
+      entryDate,
+      entryNo,
+      `Gold ${type.toUpperCase()} - ${d.customer_name || 'Direct'} (${entryNo})`,
+      dr,
+      cr,
+      parseFloat(newBalance.toFixed(3))
+    ]);
+
+    await client.query('COMMIT');
+
+    res.json({
+      success: true,
+      entry_no: entryNo,
+      id: insertGold.rows[0].id
+    });
+
+  } catch (e) {
+    await client.query('ROLLBACK');
+
+    res.json({
+      success: false,
+      error: e.message
+    });
+
+  } finally {
+    client.release();
+  }
+});
+
+
 module.exports = router;

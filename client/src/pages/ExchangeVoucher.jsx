@@ -292,31 +292,47 @@ export default function ExchangeVoucher() {
       u.balance_touch = kt > 0 ? parseFloat((kt - lt).toFixed(2)) : '';
       const kw = parseFloat(field === 'katcha_wt' ? value : u.katcha_wt) || 0;
       const bt = parseFloat(u.balance_touch) || 0;
-      u.pure_wt = kw > 0 && bt > 0 ? parseFloat((kw * bt / 100).toFixed(3)) : '';
+    u.pure_wt = kw > 0 && bt > 0
+  ? floorTo1DecimalDisplay2(kw * bt / 100)
+  : '';
       return u;
     }));
   };
 
- const floorTo1Decimal = (num) => {
+ const floorTo3Decimal = (num) => {
   const n = parseFloat(num) || 0;
-  return Math.floor(n * 10) / 10;
+  return Math.floor(n * 1000) / 1000;
 };
 
+const floorTo1DecimalDisplay2 = (num) => {
+  const n = parseFloat(num) || 0;
+  return (Math.floor(n * 10) / 10).toFixed(2);
+};
   // ── Computed values ──────────────────────────────────────────
   const totalKatcha = items.reduce((s, r) => s + (parseFloat(r.katcha_wt) || 0), 0);
   const totalPureRaw = items.reduce((s, r) => s + (parseFloat(r.pure_wt) || 0), 0);
-  const pureTouchVal = parseFloat(form.pure_touch) || parseFloat(defaultPureTouch) || 0;
- const actualPureGold = floorTo1Decimal((totalPureRaw / pureTouchVal) * 100);
 
-  const obGold = parseFloat(form.ob_exchange_gold) || 0;
-  const obCash = parseFloat(form.ob_exchange_cash) || 0;
-  const useOB = settle.use_ob && obGold > 0;         // only deduct if toggled on AND has OB
-  const obApplied = useOB ? obGold : 0;                  // actual OB being used this transaction
- const netPureOwed = floorTo1Decimal(actualPureGold - obApplied);
-  const rate = parseFloat(form.rate_per_gram) || 0;
+// Fixed pure touch for second calculation
+const pureTouchVal = 99.92;
 
-  const cashGold = parseFloat(settle.cash_gold) || 0;
-  const cashGiven = parseFloat(settle.cash_given) || 0;
+const obGold = parseFloat(form.ob_exchange_gold) || 0;
+const obCash = parseFloat(form.ob_exchange_cash) || 0;
+const useOB = settle.use_ob && obGold > 0;
+const obApplied = useOB ? obGold : 0;
+
+const rate = parseFloat(form.rate_per_gram) || 0;
+const cashGold = parseFloat(settle.cash_gold) || 0;
+const cashGiven = parseFloat(settle.cash_given) || 0;
+
+// Second calculation:
+// Pure Gold Given × 99.92%
+const actualPureGold = cashGold > 0
+  ? floorTo3Decimal((cashGold * pureTouchVal) / 100)
+  : 0;
+
+// Total due after OB
+const netPureOwed = floorTo3Decimal(totalPureRaw - obApplied);
+
 
   useEffect(() => {
     console.log('OB state debug:', {
@@ -331,12 +347,11 @@ export default function ExchangeVoucher() {
   }, [form.customer_id, form.customer_name, form.ob_exchange_gold, form.ob_exchange_cash, form.ob_items, obGold, obCash]);
 
   // Main difference
-  // Main difference
-  const diff = parseFloat((cashGold - netPureOwed).toFixed(3));
+  const diff = parseFloat((actualPureGold - netPureOwed).toFixed(3));
 
-  // Helper values
-  const pendingGold = Math.max(0, parseFloat((netPureOwed - cashGold).toFixed(3)));
-  const extraGold = Math.max(0, parseFloat((cashGold - netPureOwed).toFixed(3)));
+// Helper values
+const pendingGold = Math.max(0, parseFloat((netPureOwed - actualPureGold).toFixed(3)));
+const extraGold = Math.max(0, parseFloat((actualPureGold - netPureOwed).toFixed(3)));
 
   // Result based on actual numbers
   const isExact = settle.cash_gold !== '' && Math.abs(diff) < 0.001;
@@ -384,7 +399,7 @@ export default function ExchangeVoucher() {
         });
         custId = res.id;
       }
-      const actualDiff = parseFloat((cashGold - netPureOwed).toFixed(3));
+     const actualDiff = parseFloat((actualPureGold - netPureOwed).toFixed(3));
 
       let finalTxType = 'nil';
       if (actualDiff > 0.001) {
@@ -720,7 +735,7 @@ export default function ExchangeVoucher() {
                 <td className="right">{totalKatcha > 0 ? totalKatcha.toFixed(3) : '—'}</td>
                 <td colSpan={3}></td>
                 <td className="right" style={{ color: 'var(--green)' }}>
-                  {totalPureRaw > 0 ? totalPureRaw.toFixed(3) : '—'}
+                 {totalPureRaw > 0 ? totalPureRaw.toFixed(2) : '—'}
                 </td>
                 <td></td>
               </tr>
@@ -743,7 +758,7 @@ export default function ExchangeVoucher() {
                 </strong>
                 {' = '}
                 <strong style={{ color: 'var(--green)' }}>
-                  {parseFloat(r.pure_wt || 0).toFixed(3)}g
+                 {parseFloat(r.pure_wt || 0).toFixed(2)}g
                 </strong>
               </span>
             ))}
@@ -789,24 +804,14 @@ export default function ExchangeVoucher() {
               padding: '12px 18px',
               borderBottom: obGold !== 0 ? '1px dashed rgba(184,134,11,0.3)' : 'none',
             }}>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.2, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 3 }}>
-                  Total Pure Gold
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                  {totalPureRaw.toFixed(3)}g ÷ {pureTouchVal}% × 100
-                </div>
-              </div>
-              <div style={{ ...monoStyle, fontSize: 26, color: 'var(--gold-dark)', lineHeight: 1, textAlign: 'right' }}>
-                {actualPureGold.toFixed(2)}
-                <span style={{ fontSize: 13, marginLeft: 4, fontWeight: 400, color: 'var(--text-muted)' }}>g</span>
-              </div>
+             
+             
             </div>
 
             {/* Row 2 — Sales OB deduction breakdown (one sub-row per voucher) */}
             {obGold > 0 && (
               <div style={{
-                borderBottom: '1px dashed rgba(184,134,11,0.3)',
+                borderBottom: '1px dashed rgba(184,134,11,0.3)',  
                 background: 'rgba(184,50,50,0.04)',
               }}>
                 {/* Individual Sales OB voucher rows */}
@@ -871,9 +876,11 @@ export default function ExchangeVoucher() {
                   {obApplied !== 0 ? 'Net Pure Gold Due' : 'Total Pure Gold Due'}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                  {obApplied !== 0
-                    ? `${actualPureGold.toFixed(2)}g − ${obApplied.toFixed(3)}g OB`
-                    : `After ${pureTouchVal}% pure touch`}
+                  {cashGold > 0
+                    ? (obApplied !== 0
+                      ? `${actualPureGold.toFixed(3)}g − ${obApplied.toFixed(3)}g OB`
+                : `${cashGold.toFixed(3)}g × ${pureTouchVal}%`)
+                    : 'Calculated after entering Pure Gold Given'}
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -882,7 +889,7 @@ export default function ExchangeVoucher() {
                   <span style={{ fontSize: 14, marginLeft: 4, fontWeight: 400, color: 'var(--text-muted)' }}>g</span>
                 </div>
                 <button
-                  onClick={() => setSettle(s => ({ ...s, cash_gold: netPureOwed.toFixed(2) }))}
+                  onClick={() => setSettle(s => ({ ...s, cash_gold: netPureOwed.toFixed(3) }))}
                   style={{
                     background: 'var(--gold-dark)', color: '#FFF5D6',
                     border: 'none', borderRadius: 6, padding: '8px 12px',
@@ -999,48 +1006,77 @@ export default function ExchangeVoucher() {
 
               <div style={{ padding: '10px 14px', background: '#fff', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {isNil && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                      {purchaseCashSettled ? (
-                        <>
-                          Gold given: <strong style={{ ...monoStyle, color: 'var(--gold-dark)' }}>{cashGold.toFixed(3)}g</strong>
-                          {' + '}
-                          Cash: <strong style={{ ...monoStyle, color: 'var(--green)' }}>₹{cashGiven.toLocaleString('en-IN')}</strong>
-                          {' — Fully settled. No OB carried forward.'}
-                        </>
-                      ) : (
-                        <>
-                          Customer receives exactly <strong style={{ ...monoStyle, color: 'var(--green)' }}>{cashGold.toFixed(3)}g</strong>. No balance pending.
-                        </>
-                      )}
-                    </div>
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+      {purchaseCashSettled ? (
+        <>
+          Gold given: <strong style={{ ...monoStyle, color: 'var(--gold-dark)' }}>{cashGold.toFixed(3)}g</strong>
+          {' + '}
+          Cash: <strong style={{ ...monoStyle, color: 'var(--green)' }}>₹{cashGiven.toLocaleString('en-IN')}</strong>
+          {' — Fully settled. No OB carried forward.'}
+        </>
+      ) : extraGold > 0 ? (
+        <>
+          Customer receives <strong style={{ ...monoStyle, color: 'var(--green)' }}>{cashGold.toFixed(3)}g</strong>.
+          Extra gold balance: <strong style={{ ...monoStyle, color: 'var(--blue)' }}>{extraGold.toFixed(3)}g</strong>
+        </>
+      ) : pendingGold > 0 ? (
+        <>
+          Customer receives <strong style={{ ...monoStyle, color: 'var(--gold-dark)' }}>{cashGold.toFixed(3)}g</strong>.
+          Pending balance: <strong style={{ ...monoStyle, color: 'var(--red)' }}>{pendingGold.toFixed(3)}g</strong>
+        </>
+      ) : (
+        <>
+          Customer receives exactly <strong style={{ ...monoStyle, color: 'var(--green)' }}>{cashGold.toFixed(3)}g</strong>. No balance pending.
+        </>
+      )}
+    </div>
 
-                    {purchaseCashSettled && (
-                      <div style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        fontSize: 13,
-                        padding: '6px 10px',
-                        borderRadius: 5,
-                        background: extraCash > 0 ? 'rgba(184,50,50,0.06)' : 'rgba(26,110,64,0.06)',
-                        border: `1px solid ${extraCash > 0 ? 'rgba(184,50,50,0.25)' : 'rgba(26,110,64,0.25)'}`,
-                      }}>
-                        <span style={{ fontWeight: 600, color: 'var(--text-muted)' }}>
-                          {extraCash > 0 ? 'Extra cash given' : 'Cash settlement'}
-                        </span>
-                        <span style={{
-                          ...monoStyle,
-                          fontWeight: 700,
-                          color: extraCash > 0 ? 'var(--red)' : 'var(--green)'
-                        }}>
-                          {extraCash > 0
-                            ? `₹${extraCash.toLocaleString('en-IN')}`
-                            : '₹0'}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
+    {extraGold > 0 && !purchaseCashSettled && (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        fontSize: 13,
+        padding: '6px 10px',
+        borderRadius: 5,
+        background: 'rgba(26,80,128,0.06)',
+        border: '1px solid rgba(26,80,128,0.25)',
+      }}>
+        <span style={{ fontWeight: 600, color: 'var(--text-muted)' }}>
+          Extra Gold Balance
+        </span>
+        <span style={{ ...monoStyle, fontWeight: 700, color: 'var(--blue)' }}>
+          +{extraGold.toFixed(3)} g
+        </span>
+      </div>
+    )}
+
+    {purchaseCashSettled && (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        fontSize: 13,
+        padding: '6px 10px',
+        borderRadius: 5,
+        background: extraCash > 0 ? 'rgba(184,50,50,0.06)' : 'rgba(26,110,64,0.06)',
+        border: `1px solid ${extraCash > 0 ? 'rgba(184,50,50,0.25)' : 'rgba(26,110,64,0.25)'}`,
+      }}>
+        <span style={{ fontWeight: 600, color: 'var(--text-muted)' }}>
+          {extraCash > 0 ? 'Extra cash given' : 'Cash settlement'}
+        </span>
+        <span style={{
+          ...monoStyle,
+          fontWeight: 700,
+          color: extraCash > 0 ? 'var(--red)' : 'var(--green)'
+        }}>
+          {extraCash > 0
+            ? `₹${extraCash.toLocaleString('en-IN')}`
+            : '₹0'}
+        </span>
+      </div>
+    )}
+  </div>
+)}
 
                 {isSales && (
                   <>
@@ -1114,10 +1150,10 @@ export default function ExchangeVoucher() {
                                 ? 'rgba(26,80,128,0.06)'
                                 : 'rgba(184,50,50,0.06)',
                             border: `1px solid ${pendingCash < 1 && extraCash < 1
-                                ? 'rgba(26,110,64,0.25)'
-                                : pendingCash > 0
-                                  ? 'rgba(26,80,128,0.2)'
-                                  : 'rgba(184,50,50,0.25)'
+                              ? 'rgba(26,110,64,0.25)'
+                              : pendingCash > 0
+                                ? 'rgba(26,80,128,0.2)'
+                                : 'rgba(184,50,50,0.25)'
                               }`,
                           }}>
                             <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>
@@ -1167,11 +1203,13 @@ export default function ExchangeVoucher() {
             </div>
             <div className="calc-row">
               <span className="calc-label">Total Pure (raw)</span>
-              <span className="calc-value">{totalPureRaw.toFixed(3)} g</span>
+             <span className="calc-value">{totalPureRaw.toFixed(2)} g</span>
             </div>
             <div className="calc-row">
-              <span className="calc-label">× {pureTouchVal}% Pure Touch</span>
-              <span className="calc-value" style={{ color: 'var(--green)' }}>{actualPureGold.toFixed(2)} g</span>
+             <span className="calc-label">Pure Gold Given × {pureTouchVal}%</span>
+<span className="calc-value" style={{ color: 'var(--green)' }}>
+  {actualPureGold.toFixed(3)} g
+</span>
             </div>
             {obGold > 0 && (
               <div className="calc-row">
@@ -1185,7 +1223,7 @@ export default function ExchangeVoucher() {
             )}
             <div className="calc-row total">
               <span className="calc-label">NET PURE OWED</span>
-              <span className="calc-value big">{netPureOwed.toFixed(2)} g</span>
+              <span className="calc-value big">{netPureOwed.toFixed(3)} g</span>
             </div>
           </div>
 
@@ -1251,12 +1289,27 @@ export default function ExchangeVoucher() {
                   )}
                 </>
               )}
-              {isNil && (
-                <div className="calc-row total">
-                  <span className="calc-label">BALANCE</span>
-                  <span className="calc-value big" style={{ color: 'var(--green)' }}>0.000 g ✓</span>
-                </div>
-              )}
+             {isNil && (
+  <div className="calc-row total">
+    <span className="calc-label">BALANCE</span>
+    <span
+      className="calc-value big"
+      style={{
+        color: extraGold > 0
+          ? 'var(--blue)'
+          : pendingGold > 0
+            ? 'var(--red)'
+            : 'var(--green)'
+      }}
+    >
+      {extraGold > 0
+        ? `+${extraGold.toFixed(3)} g`
+        : pendingGold > 0
+          ? `${pendingGold.toFixed(3)} g`
+          : '0.000 g ✓'}
+    </span>
+  </div>
+)}
             </div>
           )}
 

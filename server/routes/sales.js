@@ -65,6 +65,45 @@ router.post('/', async (req, res) => {
       await client.query(`INSERT INTO sales_voucher_items (voucher_id,sno,item_description,katcha_wt,token_wt,gross_wt,touch,pure_wt,amount) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         [voucherId,i+1,it.item_description||'',parseFloat(it.katcha_wt)||0,parseFloat(it.token_wt)||0,parseFloat(it.total_wt||it.katcha_wt)||0,parseFloat(it.touch)||0,parseFloat(it.pure_wt)||0,parseFloat(it.amount)||0]);
     }
+
+    // ===============================
+// ✅ STOCK LEDGER ENTRY (ADD THIS)
+// ===============================
+
+const pureWt = parseFloat(totalPure) || 0;
+
+// Get last balance
+const last = await client.query(`
+  SELECT balance_pure_wt 
+  FROM stock_ledger 
+  ORDER BY id DESC 
+  LIMIT 1
+`);
+
+let prevBalance = last.rows.length
+  ? parseFloat(last.rows[0].balance_pure_wt)
+  : 0;
+
+// SALES = STOCK OUT
+const dr = 0;
+const cr = parseFloat(pureWt.toFixed(3));
+
+const newBalance = prevBalance - cr;
+
+// Insert into stock ledger
+await client.query(`
+  INSERT INTO stock_ledger
+  (entry_date, entry_type, ref_type, ref_no, description, dr_pure_wt, cr_pure_wt, balance_pure_wt, created_at)
+  VALUES ($1,'sales','sales',$2,$3,$4,$5,$6,NOW())
+`, [
+  vd.voucher_date,
+  voucherNo,
+  `Sales to ${vd.customer_name || 'Direct'}`,
+  dr,
+  cr,
+  parseFloat(newBalance.toFixed(3))
+]);
+
     await client.query('COMMIT');
     res.json({ success:true, voucher_no:voucherNo, id:voucherId });
   } catch(e) { await client.query('ROLLBACK'); res.json({ success:false, error:e.message }); }

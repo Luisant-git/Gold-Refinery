@@ -161,13 +161,14 @@ const loadData = async (f = filters) => {
           <div className="form-group"><label>To Date</label>
             <input type="date" value={filters.date_to} onChange={e => setFilters(f => ({ ...f, date_to: e.target.value }))} /></div>
           <div className="form-group"><label>Gold Type</label>
-            <select value={filters.ref_type} onChange={e => setFilters(f => ({ ...f, ref_type: e.target.value }))}>
-              <option value="">All</option>
-              <option value="exchange">Exchange</option>
-              <option value="sales">Sales</option>
-              <option value="purchase">Purchase</option>
-              <option value="processing">Processing</option>
-            </select></div>
+          <select value={filters.ref_type} onChange={e => setFilters(f => ({ ...f, ref_type: e.target.value }))}>
+  <option value="">All</option>
+  <option value="exchange">Exchange</option>
+  <option value="sales">Sales</option>
+  <option value="purchase">Purchase</option>
+  <option value="processing">Processing</option>
+  <option value="gold_entry">Gold Entry</option>  {/* ✅ ADD THIS */}
+</select></div>
           <div className="form-group" style={{ paddingTop: 20 }}>
             <button className="btn btn-primary" onClick={() => loadData(filters)}>Apply Filter</button>
           </div>
@@ -207,7 +208,15 @@ const loadData = async (f = filters) => {
                     <tbody>{goldLedger.map((e, i) => (
                       <tr key={i}>
                         <td style={{ fontSize: 12 }}>{fmtDate(e.entry_date)}</td>
-                        <td><span className={`badge ${e.ref_type === 'exchange' ? 'badge-info' : e.ref_type === 'sales' ? 'badge-warning' : e.ref_type === 'purchase' ? 'badge-gold' : 'badge-success'}`}>{e.ref_type || e.entry_type}</span></td>
+                        <td><span className={`badge ${e.ref_type === 'exchange' ? 'badge-info'
+: e.ref_type === 'sales' ? 'badge-warning'
+: e.ref_type === 'purchase' ? 'badge-gold'
+: e.ref_type === 'gold_entry' ? 'badge-success'
+: 'badge-default'}`}>{e.ref_type === 'gold_entry' ? 'Gold Entry'
+ : e.ref_type === 'exchange' ? 'Exchange'
+ : e.ref_type === 'sales' ? 'Sales'
+ : e.ref_type === 'purchase' ? 'Purchase'
+ : e.ref_type}</span></td>
                         <td className="font-mono text-gold" style={{ fontSize: 12 }}>{e.ref_no || '—'}</td>
                         <td style={{ maxWidth: 240, fontSize: 12 }}>{e.description}</td>
                         <td className="right td-number text-green">{parseFloat(e.dr_pure_wt || 0) > 0 ? parseFloat(e.dr_pure_wt).toFixed(3) : '—'}</td>

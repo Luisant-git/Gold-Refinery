@@ -44,14 +44,13 @@ export default function VoucherList() {
     } catch (e) { setMsg({ type: 'danger', text: e.message }); }
   };
 
-
-  const floorTo1Decimal = (num) => {
+const floorTo3Decimal = (num) => {
   const n = parseFloat(num) || 0;
-  return Math.floor(n * 10) / 10;
+  return Math.floor(n * 1000) / 1000;
 };
   // For list: use actual_pure_wt if available (exchange), else total_pure_wt
- const getPureWt = v => activeTab === 'exchange'
-  ? floorTo1Decimal(parseFloat(v.actual_pure_gold || v.actual_pure_wt || v.total_pure_wt || 0))
+const getPureWt = v => activeTab === 'exchange'
+  ? floorTo3Decimal(parseFloat(v.actual_pure_gold || v.actual_pure_wt || v.total_pure_wt || 0))
   : parseFloat(v.total_pure_wt || 0);
   const totalGross = vouchers.reduce((s, v) => s + (parseFloat(v.total_gross_wt) || 0), 0);
   const totalPure = vouchers.reduce((s, v) => s + getPureWt(v), 0);
@@ -108,7 +107,7 @@ export default function VoucherList() {
           {[
             { label: 'Vouchers', value: vouchers.length, unit: '' },
             { label: 'Total Gross Wt', value: totalGross.toFixed(3), unit: 'g' },
-           { label: 'Total Pure Wt', value: activeTab === 'exchange' ? totalPure.toFixed(2) : totalPure.toFixed(3), unit: 'g' },
+           { label: 'Total Pure Wt', value: totalPure.toFixed(3), unit: 'g' },
             ...(activeTab !== 'exchange' ? [{ label: 'Total Amount', value: `₹${roundTo10(totalAmount).toLocaleString('en-IN')}`, unit: '' }] : []),
           ].map((s, i) => (
             <div key={i} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 6, padding: '9px 14px', flex: 1 }}>
@@ -140,10 +139,11 @@ export default function VoucherList() {
                 <tbody>
                   {vouchers.map(v => {
                     const pureWt = getPureWt(v);
- const balance = activeTab === 'exchange'
-  ? floorTo1Decimal(
-      parseFloat(v.total_pure_wt || 0) -
-      parseFloat(v.pure_wt_given || v.pure_gold_given || 0)
+const balance = activeTab === 'exchange'
+  ? floorTo3Decimal(
+      (
+        (parseFloat(v.pure_wt_given || v.pure_gold_given || 0) * 99.92) / 100
+      ) - parseFloat(v.total_pure_wt || 0)
     )
   : 0;
                     return (
@@ -154,7 +154,7 @@ export default function VoucherList() {
                         <td>{v.customer_name}</td>
                         <td className="right td-number">{parseFloat(v.total_gross_wt || 0).toFixed(3)}</td>
                         <td className="right td-number">
-  {activeTab === 'exchange' ? pureWt.toFixed(2) : pureWt.toFixed(3)}
+{activeTab === 'exchange' ? pureWt.toFixed(3) : pureWt.toFixed(3)}
 </td>
                         {activeTab !== 'exchange' && (
                           <td className="right td-number">₹{roundTo10(v.net_amount).toLocaleString('en-IN')}</td>
@@ -164,7 +164,7 @@ export default function VoucherList() {
                             color: balance > 0.001 ? 'var(--red)' : balance < -0.001 ? 'var(--blue)' : 'var(--green)',
                             fontWeight: 700,
                           }}>
-                           {balance.toFixed(2)}
+                           {balance.toFixed(3)}
                           </td>
                         )}
                         <td><span className="badge badge-success">{v.status || 'completed'}</span></td>
@@ -206,7 +206,7 @@ export default function VoucherList() {
                   <tr>
                     <td colSpan={4}>{vouchers.length} vouchers</td>
                     <td className="right">{totalGross.toFixed(3)}</td>
-               <td className="right">{activeTab === 'exchange' ? totalPure.toFixed(2) : totalPure.toFixed(3)}</td>
+               <td className="right">{totalPure.toFixed(3)}</td>
                     {activeTab !== 'exchange' && <td className="right">₹{roundTo10(totalAmount).toLocaleString('en-IN')}</td>}
                     {activeTab === 'exchange' && <td></td>}
                     <td colSpan={2}></td>
@@ -357,7 +357,7 @@ export default function VoucherList() {
                       <div className="calc-row">
                         <span className="calc-label">Pure Gold Given</span>
                         <span className="calc-value" style={{ color: 'var(--gold-dark)', fontWeight: 700 }}>
-                          {parseFloat(detail.pure_wt_given || 0).toFixed(3)} g
+                          {parseFloat(detail.pure_wt_given || detail.pure_gold_given || 0).toFixed(3)} g
                         </span>
                       </div>
 
@@ -391,17 +391,17 @@ export default function VoucherList() {
   <span className="calc-label">Balance</span>
   <span className="calc-value big" style={{
     color: (
-      parseFloat(detail.total_pure_wt || 0) - parseFloat(detail.pure_wt_given || 0)
+      (((parseFloat(detail.pure_wt_given || detail.pure_gold_given || 0) * 99.92) / 100) - parseFloat(detail.total_pure_wt || 0))
     ) > 0.001
-      ? 'var(--red)'
+      ? 'var(--blue)'
       : (
-        parseFloat(detail.total_pure_wt || 0) - parseFloat(detail.pure_wt_given || 0)
+        (((parseFloat(detail.pure_wt_given || detail.pure_gold_given || 0) * 99.92) / 100) - parseFloat(detail.total_pure_wt || 0))
       ) < -0.001
-        ? 'var(--blue)'
+        ? 'var(--red)'
         : 'var(--green)'
   }}>
     {(
-      parseFloat(detail.total_pure_wt || 0) - parseFloat(detail.pure_wt_given || 0)
+      (((parseFloat(detail.pure_wt_given || detail.pure_gold_given || 0) * 99.92) / 100) - parseFloat(detail.total_pure_wt || 0))
     ).toFixed(3)} g
   </span>
 </div>

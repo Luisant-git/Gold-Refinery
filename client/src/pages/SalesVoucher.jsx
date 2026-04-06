@@ -315,9 +315,7 @@ const obCash     = parseFloat(form.ob_cash) || 0;
           }}>
             <div style={{ padding:'10px 16px', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap',
               borderBottom: (form.ob_items||[]).length > 0 ? '1px dashed rgba(184,134,11,0.3)' : 'none' }}>
-              <div style={{ fontSize:11, fontWeight:700, letterSpacing:1, color:'var(--text-muted)', textTransform:'uppercase', marginRight:6 }}>
-                Sales Opening Balance
-              </div>
+             
               {form.customer_id && form.exchange_ob_gold > 0 && (
   <div style={{
     marginTop: 12,
@@ -342,7 +340,7 @@ const obCash     = parseFloat(form.ob_cash) || 0;
         textTransform:'uppercase',
         marginRight:6
       }}>
-        Exchange Opening Balance
+        Opening Balance
       </div>
 
       <div style={{

@@ -3,9 +3,9 @@ const express = require('express');
 const router  = express.Router();
 const { getPool, getClient } = require('./db');
 
-const floorTo1Decimal = (num) => {
+const floorTo3Decimal = (num) => {
   const n = parseFloat(num) || 0;
-  return Math.floor(n * 10) / 10;
+  return Math.floor(n * 1000) / 1000;
 };
 
 // Fix ob_skipped retroactively
@@ -81,66 +81,20 @@ router.get('/customer-ob/:customerId', async (req, res) => {
       });
     }
 
-    let runningOB = 0;
-    const ob_items = [];
+   const ob_items = vs.rows
+  .filter(v =>
+    v.transaction_type === 'sales' &&
+    (parseFloat(v.diff_gold) || 0) > 0.001
+  )
+  .map(v => ({
+    voucher_no: v.voucher_no,
+    voucher_date: v.voucher_date,
+    ob_amount: parseFloat(v.diff_gold).toFixed(3)
+  }));
 
-    for (const v of vs.rows) {
-      const txType = v.transaction_type;
-      const diffGold = parseFloat(v.diff_gold) || 0;
-      const cash = parseFloat(v.cash_given) || 0;
-      const rate = parseFloat(v.rate_per_gram) || 0;
-      const skipped = parseFloat(v.ob_skipped) || 0;
-
-      // If previous OB was skipped in this voucher, bring it back first
-      if (skipped > 0.001) {
-        runningOB += skipped;
-        ob_items.push({
-          voucher_no: v.voucher_no,
-          voucher_date: v.voucher_date,
-          ob_amount: skipped
-        });
-      }
-
-      // SALES: extra gold was given -> create new OB
-      if (txType === 'sales' && diffGold > 0.001) {
-        runningOB += diffGold;
-
-        ob_items.push({
-          voucher_no: v.voucher_no,
-          voucher_date: v.voucher_date,
-          ob_amount: diffGold
-        });
-      }
-
-      // PURCHASE/NIL: if voucher used previous OB, reduce it
-      const actualPure = parseFloat(v.actual_pure_wt) || 0;
-      const totalPure = parseFloat(v.total_pure_wt) || 0;
-      const obApplied = Math.max(0, parseFloat((actualPure - totalPure).toFixed(3)));
-
-      if (obApplied > 0.001) {
-        let reduce = obApplied;
-
-        while (reduce > 0 && ob_items.length) {
-          const first = ob_items[0];
-
-          if (first.ob_amount <= reduce) {
-            reduce -= first.ob_amount;
-            runningOB -= first.ob_amount;
-            ob_items.shift();
-          } else {
-            first.ob_amount -= reduce;
-            runningOB -= reduce;
-            reduce = 0;
-          }
-        }
-      }
-
-      // If cash was used to settle pending gold, that should not affect sales OB gold
-      // so no deduction from runningOB here
-      runningOB = Math.max(0, runningOB);
-    }
-
-    runningOB = parseFloat(runningOB.toFixed(3));
+const runningOB = parseFloat(
+  ob_items.reduce((s, item) => s + (parseFloat(item.ob_amount) || 0), 0).toFixed(3)
+);
 
     res.json({
       success: true,
@@ -203,21 +157,30 @@ router.put('/:id', async (req, res) => {
 
     // Old stock effect
     const oldActualPure = parseFloat(oldVoucher.actual_pure_wt) || 0;
-    const oldPureGiven  = parseFloat(oldVoucher.pure_wt_given) || 0;
-    const oldNetEffect  = oldActualPure - oldPureGiven;
+const oldPureGiven  = parseFloat(oldVoucher.pure_wt_given) || 0;
+const oldPureTouch  = parseFloat(oldVoucher.pure_touch) || 99.92;
+const oldConvertedGiven = oldPureGiven > 0
+  ? floorTo3Decimal((oldPureGiven * oldPureTouch) / 100)
+  : 0;
+const oldNetEffect  = oldActualPure - oldConvertedGiven;
 
     // Recompute totals from incoming items
     const totalKatchaWt = items.reduce((s, i) => s + (parseFloat(i.katcha_wt) || 0), 0);
     const totalPureWt   = items.reduce((s, i) => s + (parseFloat(i.pure_wt) || 0), 0);
 
-    const pureTouchVal   = parseFloat(vd.pure_touch) || 99.90;
-const actualPureGold = floorTo1Decimal((totalPureWt / pureTouchVal) * 100);
+   const pureTouchVal   = parseFloat(vd.pure_touch) || 99.92;
+const itemPureTotal  = floorTo3Decimal(totalPureWt); // already from item pure_wt rows
 const cashGoldGiven  = parseFloat(vd.pure_gold_given) || 0;
 const cashForRem     = parseFloat(vd.cash_for_remaining) || 0;
-const netPureOwed    = parseFloat((parseFloat(vd.total_pure_wt) || actualPureGold).toFixed(3));
 const ratePerGram    = parseFloat(vd.rate_per_gram) || 0;
 
-const pendingGold = Math.max(0, parseFloat((netPureOwed - cashGoldGiven).toFixed(3)));
+const actualPureGold = cashGoldGiven > 0
+  ? floorTo3Decimal((cashGoldGiven * pureTouchVal) / 100)
+  : 0;
+
+const netPureOwed = parseFloat((parseFloat(vd.total_pure_wt) || itemPureTotal).toFixed(3));
+
+const pendingGold = Math.max(0, parseFloat((netPureOwed - actualPureGold).toFixed(3)));
 const requiredCash = ratePerGram > 0
   ? parseFloat((pendingGold * ratePerGram).toFixed(2))
   : 0;
@@ -228,8 +191,7 @@ const cashGoldEquivalent = ratePerGram > 0
   ? parseFloat((settlementCash / ratePerGram).toFixed(3))
   : 0;
 
-const balancePure = Math.max(0, parseFloat((pendingGold - cashGoldEquivalent).toFixed(3)));
-
+const balancePure = parseFloat((actualPureGold - netPureOwed).toFixed(3));
     // Update voucher header
     await client.query(`
       UPDATE exchange_vouchers
@@ -263,7 +225,7 @@ WHERE id = $20
   vd.customer_name,
   parseFloat(totalKatchaWt.toFixed(3)),
   parseFloat(totalKatchaWt.toFixed(3)),
-  actualPureGold,
+itemPureTotal,
   netPureOwed,
   cashGoldGiven,
   cashForRem,
@@ -302,7 +264,7 @@ WHERE id = $20
     }
 
     // Update stock ledger entry for this voucher
-    const newNetEffect = actualPureGold - cashGoldGiven;
+   const newNetEffect = itemPureTotal - actualPureGold;
     const diffNet = newNetEffect - oldNetEffect;
 
     // Update this voucher's stock ledger row
@@ -317,8 +279,8 @@ WHERE id = $20
     `, [
       vd.voucher_date,
       `Exchange from ${vd.customer_name} (${vd.mobile})`,
-      actualPureGold,
-      cashGoldGiven,
+     itemPureTotal,
+actualPureGold,
       oldVoucher.voucher_no
     ]);
 
@@ -404,16 +366,23 @@ router.post('/', async (req, res) => {
     const yr = new Date().getFullYear().toString().slice(-2);
     const voucherNo = `${prefix}${yr}${String(current_no).padStart(4,'0')}`;
     // Compute
- const totalKatchaWt = items.reduce((s,i)=>s+(parseFloat(i.katcha_wt)||0),0);
+const totalKatchaWt = items.reduce((s,i)=>s+(parseFloat(i.katcha_wt)||0),0);
 const totalPureWt   = items.reduce((s,i)=>s+(parseFloat(i.pure_wt)||0),0);
-const pureTouchVal  = parseFloat(vd.pure_touch) || 99.90;
-const actualPureGold = floorTo1Decimal((totalPureWt / pureTouchVal) * 100);
+
+const pureTouchVal  = parseFloat(vd.pure_touch) || 99.92;
+const itemPureTotal = floorTo3Decimal(totalPureWt);
+
 const cashGoldGiven = parseFloat(vd.pure_gold_given) || 0;
 const cashForRem    = parseFloat(vd.cash_for_remaining) || 0;
-const netPureOwed   = parseFloat((parseFloat(vd.total_pure_wt) || actualPureGold).toFixed(3));
 const ratePerGram   = parseFloat(vd.rate_per_gram) || 0;
 
-const pendingGold = Math.max(0, parseFloat((netPureOwed - cashGoldGiven).toFixed(3)));
+const actualPureGold = cashGoldGiven > 0
+  ? floorTo3Decimal((cashGoldGiven * pureTouchVal) / 100)
+  : 0;
+
+const netPureOwed   = parseFloat((parseFloat(vd.total_pure_wt) || itemPureTotal).toFixed(3));
+
+const pendingGold = Math.max(0, parseFloat((netPureOwed - actualPureGold).toFixed(3)));
 const requiredCash = ratePerGram > 0
   ? parseFloat((pendingGold * ratePerGram).toFixed(2))
   : 0;
@@ -424,7 +393,7 @@ const cashGoldEquivalent = ratePerGram > 0
   ? parseFloat((settlementCash / ratePerGram).toFixed(3))
   : 0;
 
-const balancePure = Math.max(0, parseFloat((pendingGold - cashGoldEquivalent).toFixed(3)));
+const balancePure = parseFloat((actualPureGold - netPureOwed).toFixed(3));
     // Insert voucher
     const vRes = await client.query(`
    INSERT INTO exchange_vouchers
@@ -441,10 +410,10 @@ VALUES ($1,$2,$3,$4,$5,$6,0,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
   vd.mobile,
   vd.customer_name,
   parseFloat(totalKatchaWt.toFixed(3)),
-  parseFloat(totalKatchaWt.toFixed(3)),
-  actualPureGold,
-  netPureOwed,
-  cashGoldGiven,
+parseFloat(totalKatchaWt.toFixed(3)),
+itemPureTotal,
+netPureOwed,
+cashGoldGiven,
   cashForRem,
   balancePure,
   ratePerGram,
@@ -474,7 +443,7 @@ VALUES ($1,$2,$3,$4,$5,$6,0,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
       INSERT INTO stock_ledger (entry_date,entry_type,ref_type,ref_no,description,dr_pure_wt,cr_pure_wt,balance_pure_wt,created_at)
       VALUES ($1,'receipt','exchange',$2,$3,$4,$5,$6,NOW())`,
       [vd.voucher_date,voucherNo,`Exchange from ${vd.customer_name} (${vd.mobile})`,
-       actualPureGold,cashGoldGiven,bal+actualPureGold-cashGoldGiven]);
+       itemPureTotal, actualPureGold, bal + itemPureTotal - actualPureGold]);
     await client.query('COMMIT');
     res.json({ success:true, voucher_no:voucherNo, id:voucherId });
   } catch(e) { await client.query('ROLLBACK'); res.json({ success:false, error:e.message }); }

@@ -36,35 +36,38 @@ export default function PrintReceipt({ voucher, type, onClose }) {
   const isSales = type === 'sales';
   const isPurchase = type === 'purchase';
 
-  const floorTo1Decimal = (num) => {
-  const n = parseFloat(num) || 0;
-  return Math.floor(n * 10) / 10;
-};
+  const floorTo3Decimal = (num) => {
+    const n = parseFloat(num) || 0;
+    return Math.floor(n * 1000) / 1000;
+  };
 
   const items = voucher.items || [];
   const date = fmtDate(voucher.voucher_date);
   const rate = parseFloat(voucher.rate_per_gram || 0);
-  const pureTouchVal = parseFloat(voucher.pure_touch || masterPureTouch || 99.90);
-  const actualPureWtRaw = parseFloat(
-  voucher.actual_pure_gold || voucher.actual_pure_wt || voucher.total_pure_wt || 0
-);
-const netPureOwedRaw = parseFloat(voucher.total_pure_wt || 0);
+const pureTouchVal = parseFloat(voucher.pure_touch || masterPureTouch || 99.92);
 
-const actualPureWt = floorTo1Decimal(actualPureWtRaw);
-const netPureOwed = floorTo1Decimal(netPureOwedRaw);
+const actualPureWt = floorTo3Decimal(
+  parseFloat(voucher.actual_pure_gold || voucher.actual_pure_wt || voucher.total_pure_wt || 0)
+);
+
+const netPureOwed = floorTo3Decimal(
+  parseFloat(voucher.total_pure_wt || 0)
+);
 
 const pureGoldGiven = parseFloat(voucher.pure_wt_given || voucher.pure_gold_given || 0);
+const convertedGivenGold = pureGoldGiven > 0
+  ? floorTo3Decimal((pureGoldGiven * pureTouchVal) / 100)
+  : 0;
+
 const cashGiven = parseFloat(voucher.cash_given || voucher.cash_for_remaining || 0);
-const balancePure = parseFloat(voucher.balance_pure_wt || 0);
 const requiredCash = parseFloat(voucher.required_cash || 0);
 const extraCash = parseFloat(voucher.extra_cash || 0);
 
-const pureAfterTouch = floorTo1Decimal((actualPureWt * pureTouchVal) / 100);
 const hasOB = isExchange && Math.abs(netPureOwed - actualPureWt) > 0.001;
-const obAmount = hasOB ? floorTo1Decimal(actualPureWt - netPureOwed) : 0;
-  const isNilBalance =
-    isExchange &&
-    Math.abs(balancePure) < 0.001;
+const obAmount = hasOB ? floorTo3Decimal(actualPureWt - netPureOwed) : 0;
+
+const closingBalance = floorTo3Decimal(convertedGivenGold - netPureOwed);
+const isNilBalance = isExchange && Math.abs(closingBalance) < 0.001;
   const totalKatcha = items.reduce((s, r) => s + (parseFloat(r.katcha_wt) || 0), 0);
   const totalWt = parseFloat(voucher.total_gross_wt || 0);
   const grossAmt = parseFloat(voucher.gross_amount || 0);
@@ -221,7 +224,7 @@ const obAmount = hasOB ? floorTo1Decimal(actualPureWt - netPureOwed) : 0;
                 {/* Total weight + pure row */}
                 <div style={{ ...row, fontWeight: 'bold' }}>
                   <span>{totalKatcha.toFixed(3)}  Total</span>
-                  <span>{actualPureWt.toFixed(2)}</span>
+                  <span>{actualPureWt.toFixed(3)}</span>
                 </div>
 
                 {/* OB — only if exists */}
@@ -229,7 +232,7 @@ const obAmount = hasOB ? floorTo1Decimal(actualPureWt - netPureOwed) : 0;
                   <div style={{ ...row }}>
                     <span style={{ paddingLeft: 20 }}>O.B</span>
                     <span style={{ fontWeight: 'bold' }}>
-                      {obAmount > 0 ? `- ${obAmount.toFixed(2)}` : `+ ${Math.abs(obAmount).toFixed(2)}`}
+                      {obAmount > 0 ? `- ${obAmount.toFixed(3)}` : `+ ${Math.abs(obAmount).toFixed(3)}`}
                     </span>
                   </div>
                 )}
@@ -237,15 +240,15 @@ const obAmount = hasOB ? floorTo1Decimal(actualPureWt - netPureOwed) : 0;
                 {/* Net pure line after OB */}
                 <div style={{ borderTop: '1px dashed #000', ...row, paddingTop: 3, fontWeight: 'bold' }}>
                   <span></span>
-                  <span>{netPureOwed.toFixed(2)}</span>
+                  <span>{netPureOwed.toFixed(3)}</span>
                 </div>
 
                 {/* PURE GOLD calc */}
                 <div style={{ marginTop: 6, marginBottom: 4 }}>
                   <div style={{ fontWeight: 'bold', fontSize: 12, marginBottom: 2 }}>PURE GOLD</div>
                   <div style={{ ...row }}>
-                    <span>{actualPureWt.toFixed(2)} </span>
-<span style={{ fontWeight: 'bold' }}>{pureAfterTouch.toFixed(2)}</span>
+                    <span>{pureGoldGiven.toFixed(3)} × {pureTouchVal.toFixed(2)}%</span>
+                    <span style={{ fontWeight: 'bold' }}>{convertedGivenGold.toFixed(3)}</span>
                   </div>
                 </div>
 
@@ -275,11 +278,11 @@ const obAmount = hasOB ? floorTo1Decimal(actualPureWt - netPureOwed) : 0;
 
                 {/* Closing balance */}
                 <div style={{ borderTop: '1px solid #000', paddingTop: 4, marginTop: 4, ...row }}>
-                  <span>₹ &nbsp;&nbsp;&nbsp; CLOSING BALANCE</span>
+                  <span>CLOSING BALANCE</span>
                   <span style={{ fontWeight: 'bold' }}>
-                    {Math.abs(netPureOwed - pureGoldGiven) < 0.001
+                    {isNilBalance
                       ? 'NIL'
-                      : `${floorTo1Decimal(netPureOwed - pureGoldGiven).toFixed(2)} g`}
+                      : `${closingBalance > 0 ? '+' : ''}${closingBalance.toFixed(3)} g`}
                   </span>
                 </div>
 
