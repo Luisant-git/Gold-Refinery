@@ -109,6 +109,7 @@ const [form, setForm] = useState({
   deductions:'',
   payment_mode:'cash',
   remarks:'',
+  ob_gold: 0,
   ob_cash:0,
   ob_items:[],
   exchange_ob_gold: 0,
@@ -137,11 +138,13 @@ const [form, setForm] = useState({
 
 const onMobileSelect = async (cust) => {
   setForm(f => ({
-    ...f,
-    mobile: cust.mobile,
-    customer_name: cust.name,
-    customer_id: cust.id,
-  }));
+  ...f,
+  mobile: cust.mobile,
+  customer_name: cust.name,
+  customer_id: cust.id,
+  ob_gold: Number(cust?.ob_gold || 0),
+  ob_cash: Number(cust?.ob_cash || 0),
+}));
 
   try {
     const purchaseOb = await fetchCustomerOB(cust.id);
@@ -150,24 +153,32 @@ const onMobileSelect = async (cust) => {
     console.log('Purchase OB response:', purchaseOb);
     console.log('Exchange OB response:', exchangeOb);
 
-    setForm(f => ({
-      ...f,
-      ob_cash: Number(purchaseOb?.ob_cash || 0),
-      ob_items: Array.isArray(purchaseOb?.ob_items) ? purchaseOb.ob_items : [],
-      exchange_ob_gold: Number(exchangeOb?.ob_gold || 0),
-      exchange_ob_cash: Number(exchangeOb?.ob_cash || 0),
-      exchange_ob_items: Array.isArray(exchangeOb?.ob_items) ? exchangeOb.ob_items : [],
-    }));
+   setForm(f => ({
+  ...f,
+  mobile: cust.mobile,
+  customer_name: cust.name,
+  customer_id: cust.id,
+  ob_gold: Number(cust?.ob_gold || 0),
+  ob_cash: Number(cust?.ob_cash || purchaseOb?.ob_cash || 0),
+  ob_items: Array.isArray(purchaseOb?.ob_items) ? purchaseOb.ob_items : [],
+  exchange_ob_gold: Number(exchangeOb?.ob_gold || 0),
+  exchange_ob_cash: Number(exchangeOb?.ob_cash || 0),
+  exchange_ob_items: Array.isArray(exchangeOb?.ob_items) ? exchangeOb.ob_items : [],
+}));
   } catch (err) {
     console.error('OB fetch failed:', err);
-    setForm(f => ({
-      ...f,
-      ob_cash: 0,
-      ob_items: [],
-      exchange_ob_gold: 0,
-      exchange_ob_cash: 0,
-      exchange_ob_items: [],
-    }));
+   setForm(f => ({
+  ...f,
+  mobile: cust.mobile,
+  customer_name: cust.name,
+  customer_id: cust.id,
+  ob_gold: Number(cust?.ob_gold || 0),
+  ob_cash: Number(cust?.ob_cash || 0),
+  ob_items: [],
+  exchange_ob_gold: 0,
+  exchange_ob_cash: 0,
+  exchange_ob_items: [],
+}));
   }
 };
 
@@ -201,7 +212,13 @@ const onMobileSelect = async (cust) => {
   const totalWt    = items.reduce((s,r) => s + (parseFloat(r.weight) || 0), 0);
   const deductions = parseFloat(form.deductions) || 0;
   const netAmount  = parseFloat((totalAmt - deductions).toFixed(2));
-  const obCash     = parseFloat(form.ob_cash) || 0;
+ const obGold = parseFloat(form.ob_gold) || 0;
+const obCash = parseFloat(form.ob_cash) || 0;
+const exchangeObGold = parseFloat(form.exchange_ob_gold) || 0;
+const exchangeObCash = parseFloat(form.exchange_ob_cash) || 0;
+
+const totalGoldOb = obGold + exchangeObGold;
+const totalCashOb = obCash + exchangeObCash;
 
   const handleSave = async () => {
     if (!form.mobile || !form.customer_name) { setMsg({ type:'danger', text:'Mobile and name required' }); return; }
@@ -245,6 +262,7 @@ const handleClear = () => {
     deductions:'',
     payment_mode:'cash',
     remarks:'',
+    ob_gold: 0,
     ob_cash:0,
     ob_items:[],
     exchange_ob_gold: 0,
@@ -296,147 +314,340 @@ const handleClear = () => {
         </div>
 
         {/* Purchase OB Banner */}
-        {form.customer_id && (
+                {/* ── Opening Balance Summary ── */}
+        {(form.customer_id ||
+          obGold !== 0 ||
+          obCash !== 0 ||
+          exchangeObGold !== 0 ||
+          exchangeObCash !== 0 ||
+          (form.ob_items || []).length > 0 ||
+          (form.exchange_ob_items || []).length > 0) && (
           <div style={{
-            marginTop: 14, borderRadius: 8, overflow:'hidden',
-            background: 'linear-gradient(90deg, #F5F0E6, #EEE8D8)',
-            border: '1.5px solid rgba(184,134,11,0.3)',
+            marginTop: 14,
+            background: 'linear-gradient(90deg, #F7F4EC, #EFE7D6)',
+            border: '1.5px solid rgba(120,100,60,0.18)',
+            borderRadius: 8,
+            overflow: 'hidden',
           }}>
-            <div style={{ padding:'10px 16px', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap',
-              borderBottom: (form.ob_items||[]).length > 0 ? '1px dashed rgba(184,134,11,0.3)' : 'none' }}>
-             
-              {form.customer_id && form.exchange_ob_gold > 0 && (
-  <div style={{
-    marginTop: 12,
-    borderRadius: 8,
-    overflow:'hidden',
-    background: 'linear-gradient(90deg, #F5F0E6, #EEE8D8)',
-    border: '1.5px solid rgba(184,134,11,0.3)',
-  }}>
-    <div style={{
-      padding:'10px 16px',
-      display:'flex',
-      alignItems:'center',
-      gap:10,
-      flexWrap:'wrap',
-      borderBottom: (form.exchange_ob_items || []).length > 0 ? '1px dashed rgba(184,134,11,0.3)' : 'none'
-    }}>
-      <div style={{
-        fontSize:11,
-        fontWeight:700,
-        letterSpacing:1,
-        color:'var(--text-muted)',
-        textTransform:'uppercase',
-        marginRight:6
-      }}>
-         Opening Balance
-      </div>
-
-      <div style={{
-        display:'flex',
-        alignItems:'center',
-        gap:8,
-        padding:'5px 14px',
-        borderRadius:6,
-        background:'rgba(184,50,50,0.08)',
-        border:'1.5px solid rgba(184,50,50,0.3)',
-      }}>
-        <span style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', letterSpacing:0.5 }}>
-          OB GOLD
-        </span>
-        <strong style={{ ...monoStyle, fontSize:17, color:'var(--red)' }}>
-          −{form.exchange_ob_gold.toFixed(3)} g
-        </strong>
-        <span style={{
-          fontSize:10,
-          color:'var(--red)',
-          fontWeight:700,
-          background:'rgba(184,50,50,0.1)',
-          padding:'2px 6px',
-          borderRadius:4
-        }}>
-          EXCHANGE OB
-        </span>
-      </div>
-    </div>
-
-    {(form.exchange_ob_items || []).length > 0 && (
-      <div style={{ padding:'8px 16px', display:'flex', flexDirection:'column', gap:4 }}>
-        {(form.exchange_ob_items || []).map((item, i) => (
-          <div key={i} style={{
-            display:'flex',
-            alignItems:'center',
-            gap:10,
-            padding:'4px 10px',
-            borderRadius:5,
-            background:'rgba(184,50,50,0.04)',
-            border:'1px solid rgba(184,50,50,0.15)',
-            fontSize:12,
-          }}>
-            <span style={{ ...monoStyle, fontSize:13, color:'var(--red)', minWidth:90 }}>
-              −{parseFloat(item.ob_amount || 0).toFixed(3)} g
-            </span>
-            <span style={{
-              fontSize:10,
-              fontWeight:700,
-              padding:'2px 7px',
-              borderRadius:4,
-              background:'rgba(184,50,50,0.12)',
-              color:'var(--red)'
+            <div style={{
+              padding: '10px 16px',
+              borderBottom: '1px dashed rgba(120,100,60,0.18)',
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: 1,
+              color: 'var(--text-muted)',
+              textTransform: 'uppercase'
             }}>
-              EXCHANGE OB
-            </span>
-            <span style={{ ...monoStyle, fontSize:11, color:'var(--gold-dark)' }}>
-              #{item.voucher_no}
-            </span>
-            <span style={{ fontSize:11, color:'var(--text-muted)' }}>
-              {new Date(item.voucher_date).toLocaleDateString('en-IN', {
-                day:'2-digit',
-                month:'2-digit',
-                year:'numeric'
-              })}
-            </span>
-          </div>
-        ))}
-      </div>
-    )}
-  </div>
-)}
-              <div style={{
-                display:'flex', alignItems:'center', gap:8, padding:'5px 14px', borderRadius:6,
-                background: obCash > 0 ? 'rgba(26,110,64,0.08)' : 'rgba(0,0,0,0.04)',
-                border: `1.5px solid ${obCash > 0 ? 'rgba(26,110,64,0.3)' : 'rgba(0,0,0,0.1)'}`,
-              }}>
-                <span style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', letterSpacing:0.5 }}>OB CASH</span>
-                <strong style={{ ...monoStyle, fontSize:17, color: obCash > 0 ? 'var(--green)' : 'var(--text-muted)' }}>
-                  {obCash === 0 ? '₹0.00' : `₹${obCash.toLocaleString('en-IN', { minimumFractionDigits:2 })}`}
-                </strong>
-                {obCash > 0 && <span style={{ fontSize:10, color:'var(--green)', fontWeight:700, background:'rgba(26,110,64,0.1)', padding:'2px 6px', borderRadius:4 }}>PENDING — TO PAY</span>}
-              </div>
-              {obCash === 0 && <span style={{ fontSize:12, color:'var(--text-muted)', fontStyle:'italic' }}>No pending Purchase balance</span>}
+              Opening Balance Summary
             </div>
 
-            {(form.ob_items||[]).length > 0 && (
-              <div style={{ padding:'8px 16px', display:'flex', flexDirection:'column', gap:4 }}>
-                {(form.ob_items||[]).map((item, i) => (
-                  <div key={i} style={{
-                    display:'flex', alignItems:'center', gap:10, padding:'4px 10px',
-                    borderRadius:5, background:'rgba(26,110,64,0.04)',
-                    border:'1px solid rgba(26,110,64,0.15)', fontSize:12,
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+              gap: 14,
+              padding: '14px 16px'
+            }}>
+              {/* GOLD BLOCK */}
+              <div style={{
+                background: 'rgba(184,134,11,0.06)',
+                border: '1px solid rgba(184,134,11,0.18)',
+                borderRadius: 8,
+                overflow: 'hidden'
+              }}>
+                <div style={{ padding: '12px 14px' }}>
+                  <div style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: 'var(--gold-dark)',
+                    marginBottom: 10,
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.8
                   }}>
-                    <span style={{ ...monoStyle, fontSize:13, color:'var(--green)', minWidth:90 }}>
-                      ₹{parseFloat(item.ob_amount).toLocaleString('en-IN', { minimumFractionDigits:2 })}
-                    </span>
-                    <span style={{ fontSize:10, fontWeight:700, padding:'2px 7px', borderRadius:4,
-                      background:'rgba(26,110,64,0.12)', color:'var(--green)' }}>PENDING</span>
-                    <span style={{ ...monoStyle, fontSize:11, color:'var(--gold-dark)' }}>#{item.voucher_no}</span>
-                    <span style={{ fontSize:11, color:'var(--text-muted)' }}>
-                      {new Date(item.voucher_date).toLocaleDateString('en-IN', { day:'2-digit', month:'2-digit', year:'numeric' })}
-                    </span>
+                    OB Gold
                   </div>
-                ))}
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Exchange OB Gold</span>
+                    <strong style={{ fontFamily: 'JetBrains Mono, monospace', color: exchangeObGold > 0 ? 'var(--red)' : 'var(--gold-dark)' }}>
+                      {exchangeObGold > 0 ? `−${exchangeObGold.toFixed(3)} g` : '0.000 g'}
+                    </strong>
+                  </div>
+                </div>
+
+                {(form.exchange_ob_items || []).length > 0 && (
+                  <div style={{
+                    borderTop: '1px dashed rgba(184,134,11,0.22)',
+                    borderBottom: '1px dashed rgba(184,134,11,0.22)',
+                    background: 'rgba(184,50,50,0.04)',
+                    padding: '10px 12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6
+                  }}>
+                    {(form.exchange_ob_items || []).map((item, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          padding: '6px 8px',
+                          borderRadius: 5,
+                          background: 'rgba(184,50,50,0.04)',
+                          border: '1px solid rgba(184,50,50,0.14)',
+                          fontSize: 12,
+                          flexWrap: 'wrap'
+                        }}
+                      >
+                        <strong style={{
+                          fontFamily: 'JetBrains Mono, monospace',
+                          fontWeight: 700,
+                          fontSize: 14,
+                          color: 'var(--red)',
+                          minWidth: 90,
+                        }}>
+                          −{parseFloat(item.ob_amount || 0).toFixed(3)} g
+                        </strong>
+
+                        <span style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: '2px 7px',
+                          borderRadius: 4,
+                          background: 'rgba(184,50,50,0.12)',
+                          color: 'var(--red)',
+                        }}>
+                          EXCHANGE OB
+                        </span>
+
+                        <span style={{
+                          fontFamily: 'JetBrains Mono, monospace',
+                          fontWeight: 600,
+                          fontSize: 12,
+                          color: 'var(--gold-dark)',
+                        }}>
+                          #{item.voucher_no}
+                        </span>
+
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                          {new Date(item.voucher_date).toLocaleDateString('en-IN', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric'
+                          })}
+                        </span>
+                      </div>
+                    ))}
+
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '6px 8px 0',
+                      marginTop: 2,
+                      borderTop: '1.5px solid rgba(184,50,50,0.22)',
+                      fontSize: 13,
+                    }}>
+                      <span style={{
+                        fontWeight: 700,
+                        color: 'var(--red)',
+                        letterSpacing: 0.5,
+                      }}>
+                        {(form.exchange_ob_items || []).length > 1
+                          ? `TOTAL EXCHANGE OB (${(form.exchange_ob_items || []).length} vouchers)`
+                          : 'TOTAL EXCHANGE OB'}
+                      </span>
+                      <strong style={{
+                        fontFamily: 'JetBrains Mono, monospace',
+                        fontWeight: 700,
+                        fontSize: 15,
+                        color: 'var(--red)',
+                      }}>
+                        −{exchangeObGold.toFixed(3)} g
+                      </strong>
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ padding: '12px 14px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>General OB Gold</span>
+                    <strong style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--gold-dark)' }}>
+                      {obGold.toFixed(3)} g
+                    </strong>
+                  </div>
+
+                  <div style={{
+                    height: 1,
+                    background: 'rgba(184,134,11,0.18)',
+                    margin: '8px 0'
+                  }} />
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold-dark)' }}>
+                      Total Gold OB
+                    </span>
+                    <strong style={{
+                      fontFamily: 'JetBrains Mono, monospace',
+                      fontSize: 16,
+                      color: 'var(--gold-dark)'
+                    }}>
+                      {totalGoldOb.toFixed(3)} g
+                    </strong>
+                  </div>
+                </div>
               </div>
-            )}
+
+              {/* CASH BLOCK */}
+              <div style={{
+                background: 'rgba(26,110,64,0.06)',
+                border: '1px solid rgba(26,110,64,0.18)',
+                borderRadius: 8,
+                overflow: 'hidden'
+              }}>
+                <div style={{ padding: '12px 14px' }}>
+                  <div style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: 'var(--green)',
+                    marginBottom: 10,
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.8
+                  }}>
+                    OB Cash
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Purchase OB Cash</span>
+                    <strong style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--green)' }}>
+                      ₹{obCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </strong>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Exchange OB Cash</span>
+                    <strong style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--green)' }}>
+                      ₹{exchangeObCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </strong>
+                  </div>
+                </div>
+
+                {(form.ob_items || []).length > 0 && (
+                  <div style={{
+                    borderTop: '1px dashed rgba(26,110,64,0.22)',
+                    borderBottom: '1px dashed rgba(26,110,64,0.22)',
+                    background: 'rgba(26,110,64,0.04)',
+                    padding: '10px 12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6
+                  }}>
+                    {(form.ob_items || []).map((item, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          padding: '6px 8px',
+                          borderRadius: 5,
+                          background: 'rgba(26,110,64,0.04)',
+                          border: '1px solid rgba(26,110,64,0.14)',
+                          fontSize: 12,
+                          flexWrap: 'wrap'
+                        }}
+                      >
+                        <strong style={{
+                          fontFamily: 'JetBrains Mono, monospace',
+                          fontWeight: 700,
+                          fontSize: 14,
+                          color: 'var(--green)',
+                          minWidth: 90,
+                        }}>
+                          ₹{parseFloat(item.ob_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </strong>
+
+                        <span style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: '2px 7px',
+                          borderRadius: 4,
+                          background: 'rgba(26,110,64,0.12)',
+                          color: 'var(--green)',
+                        }}>
+                          PURCHASE OB
+                        </span>
+
+                        <span style={{
+                          fontFamily: 'JetBrains Mono, monospace',
+                          fontWeight: 600,
+                          fontSize: 12,
+                          color: 'var(--gold-dark)',
+                        }}>
+                          #{item.voucher_no}
+                        </span>
+
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                          {new Date(item.voucher_date).toLocaleDateString('en-IN', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric'
+                          })}
+                        </span>
+                      </div>
+                    ))}
+
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '6px 8px 0',
+                      marginTop: 2,
+                      borderTop: '1.5px solid rgba(26,110,64,0.22)',
+                      fontSize: 13,
+                    }}>
+                      <span style={{
+                        fontWeight: 700,
+                        color: 'var(--green)',
+                        letterSpacing: 0.5,
+                      }}>
+                        {(form.ob_items || []).length > 1
+                          ? `TOTAL PURCHASE OB (${(form.ob_items || []).length} vouchers)`
+                          : 'TOTAL PURCHASE OB'}
+                      </span>
+                      <strong style={{
+                        fontFamily: 'JetBrains Mono, monospace',
+                        fontWeight: 700,
+                        fontSize: 15,
+                        color: 'var(--green)',
+                      }}>
+                        ₹{obCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </strong>
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ padding: '12px 14px' }}>
+                  <div style={{
+                    height: 1,
+                    background: 'rgba(26,110,64,0.18)',
+                    margin: '8px 0'
+                  }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--green)' }}>
+                      Total Cash OB
+                    </span>
+                    <strong style={{
+                      fontFamily: 'JetBrains Mono, monospace',
+                      fontSize: 16,
+                      color: 'var(--green)'
+                    }}>
+                      ₹{totalCashOb.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

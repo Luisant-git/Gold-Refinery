@@ -3,7 +3,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { bankEntryAPI, customerAPI } from '../db/api';
 import { fmtDate } from '../db/utils';
 
-/* -------------------- Mobile Auto Complete -------------------- */
 function MobileAC({ value, onChange, onSelect }) {
   const [sugg, setSugg] = useState([]);
   const [open, setOpen] = useState(false);
@@ -11,9 +10,7 @@ function MobileAC({ value, onChange, onSelect }) {
 
   useEffect(() => {
     const handleClick = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) {
-        setOpen(false);
-      }
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
@@ -88,7 +85,6 @@ function MobileAC({ value, onChange, onSelect }) {
   );
 }
 
-/* -------------------- Main Component -------------------- */
 export default function BankEntry() {
   const today = new Date().toISOString().split('T')[0];
 
@@ -100,16 +96,16 @@ export default function BankEntry() {
     amount: '',
     entry_type: 'IN',
     payment_mode: 'PHONEPE',
-    transaction_id: ''
+    transaction_id: '',
+    ob_cash: 0,
+    ob_gold: 0
   });
 
   const [list, setList] = useState([]);
   const [msg, setMsg] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
   const load = () => {
     bankEntryAPI.getAll().then(setList).catch(() => {});
@@ -119,15 +115,29 @@ export default function BankEntry() {
     setForm((f) => ({ ...f, [k]: v }));
   };
 
-  const onSelect = (c) => {
+ const onSelect = async (c) => {
+  try {
+    const full = await customerAPI.getByMobile(c.mobile);
     setForm((f) => ({
       ...f,
+      mobile: c.mobile,
       customer_name: c.name,
-      customer_id: c.id
+      customer_id: c.id,
+      ob_cash: parseFloat(full?.ob_cash || 0),
+      ob_gold: parseFloat(full?.ob_gold || 0)
     }));
-  };
+  } catch {
+    setForm((f) => ({
+      ...f,
+      mobile: c.mobile,
+      customer_name: c.name,
+      customer_id: c.id,
+      ob_cash: 0,
+      ob_gold: 0
+    }));
+  }
+};
 
-  /* -------------------- Totals -------------------- */
   const totalIn = list
     .filter((r) => r.entry_type === 'IN')
     .reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
@@ -136,7 +146,6 @@ export default function BankEntry() {
     .filter((r) => r.entry_type === 'OUT')
     .reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
 
-  /* -------------------- Save -------------------- */
   const handleSave = async () => {
     if (!form.mobile || !form.customer_name) {
       setMsg({ type: 'danger', text: 'Mobile & Name required' });
@@ -174,21 +183,72 @@ export default function BankEntry() {
         customer_id: custId
       });
 
+
+
+    const customer = await customerAPI.getByMobile(form.mobile);
+console.log('Customer before bank update:', {
+  id: customer?.id,
+  mobile: customer?.mobile,
+  name: customer?.name,
+  ob_cash: customer?.ob_cash,
+  ob_gold: customer?.ob_gold
+});
+
+const currentCash = parseFloat(customer?.ob_cash || 0);
+const currentGold = parseFloat(customer?.ob_gold || 0);
+const amt = parseFloat(form.amount || 0);
+
+const nextCash = form.entry_type === 'OUT'
+  ? currentCash + amt
+  : currentCash - amt;
+
+console.log('Updating bank amount into OB cash:', {
+  custId,
+  currentCash,
+  amt,
+  nextCash
+});
+
+const updRes = await customerAPI.update(custId, {
+  mobile: customer?.mobile || form.mobile,
+  name: customer?.name || form.customer_name,
+  address: customer?.address || '',
+  ob_gold: currentGold,
+  ob_cash: nextCash
+});
+
+console.log('Bank update response:', updRes);
+
+if (!updRes?.success) {
+  throw new Error(updRes?.error || 'Customer bank balance update failed');
+}
+
+const verify = await customerAPI.getByMobile(form.mobile);
+console.log('Customer after bank update:', {
+  id: verify?.id,
+  mobile: verify?.mobile,
+  name: verify?.name,
+  ob_cash: verify?.ob_cash,
+  ob_gold: verify?.ob_gold
+});
+
       setMsg({
         type: 'success',
         text: `Bank Entry ${res.entry_no} saved!`
       });
 
-      setForm({
-        entry_date: today,
-        mobile: '',
-        customer_name: '',
-        customer_id: null,
-        amount: '',
-        entry_type: 'IN',
-        payment_mode: 'PHONEPE',
-        transaction_id: ''
-      });
+    setForm({
+  entry_date: today,
+  mobile: form.mobile,
+  customer_name: form.customer_name,
+  customer_id: custId,
+  amount: '',
+  entry_type: 'IN',
+  payment_mode: 'PHONEPE',
+  transaction_id: '',
+  ob_cash: nextCash,
+  ob_gold: currentGold
+});
 
       load();
     } catch (e) {
@@ -206,7 +266,6 @@ export default function BankEntry() {
 
   const monoStyle = { fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 };
 
-  /* -------------------- UI -------------------- */
   return (
     <div className="page">
       <div className="page-header">
@@ -215,7 +274,6 @@ export default function BankEntry() {
 
       {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
 
-      {/* Totals */}
       <div className="two-col" style={{ marginBottom: 0 }}>
         <div className="stat-card" style={{ borderColor: 'rgba(26,110,64,0.3)' }}>
           <div className="stat-icon" style={{ color: 'var(--green)' }}>↓</div>
@@ -234,9 +292,34 @@ export default function BankEntry() {
         </div>
       </div>
 
-      {/* Form */}
       <div className="card" style={{ marginTop: 14 }}>
         <div className="card-title">New Bank Entry</div>
+
+        {form.customer_id && (
+          <div style={{
+            marginBottom: 12,
+            padding: '10px 14px',
+            background: '#FAF7EF',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            display: 'flex',
+            gap: 18,
+            flexWrap: 'wrap'
+          }}>
+            <div>
+              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>OB Cash: </span>
+              <strong style={{ color: 'var(--blue)', fontFamily: 'JetBrains Mono, monospace' }}>
+                ₹{parseFloat(form.ob_cash || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </strong>
+            </div>
+            <div>
+              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>OB Gold: </span>
+              <strong style={{ color: 'var(--gold-dark)', fontFamily: 'JetBrains Mono, monospace' }}>
+                {parseFloat(form.ob_gold || 0).toFixed(3)} g
+              </strong>
+            </div>
+          </div>
+        )}
 
         <div className="form-grid form-grid-3" style={{ marginBottom: 12 }}>
           <div className="form-group">
@@ -318,7 +401,6 @@ export default function BankEntry() {
         </button>
       </div>
 
-      {/* Table */}
       <div className="card">
         <div className="card-title">Recent Bank Entries</div>
 

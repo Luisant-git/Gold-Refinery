@@ -139,29 +139,31 @@ export default function ExchangeVoucher() {
 
   const [voucherNo, setVoucherNo] = useState('Loading...');
   const [lastSaved, setLastSaved] = useState(null);  // full saved voucher for print
-  const [form, setForm] = useState({
-    voucher_date: today,
-    mobile: '', customer_name: '', customer_id: null,
-    rate_per_gram: '', pure_touch: '', remarks: '',
-    ob_exchange_gold: 0,
-    ob_exchange_cash: 0,
-    ob_items: [],
-    ob_last_voucher: null,
-    ob_last_date: null,
-    ob_tx_type: null,
-  });
+const [form, setForm] = useState({
+  voucher_date: today,
+  mobile: '', customer_name: '', customer_id: null,
+  rate_per_gram: '', pure_touch: '', remarks: '',
+  ob_exchange_gold: 0,
+  ob_exchange_cash: 0,
+  ob_gold: 0,
+  ob_cash: 0,
+  ob_items: [],
+  ob_last_voucher: null,
+  ob_last_date: null,
+  ob_tx_type: null,
+});
   const [items, setItems] = useState([{ ...EMPTY_ROW }]);
   const [msg, setMsg] = useState(null);
   const [saving, setSaving] = useState(false);
   const [latestRate, setLatestRate] = useState(null);
   const [defaultPureTouch, setDefaultPureTouch] = useState('');
-  const [settle, setSettle] = useState({
-    mode: 'purchase',
-    cash_gold: '',
-    use_ob: true,
-    cash_given: ''
-  });
-
+const [settle, setSettle] = useState({
+  mode: 'purchase',
+  cash_gold: '',
+  use_ob: true,
+  use_ob_cash: true,
+  cash_given: ''
+});
 
   const [searchParams] = useSearchParams();
   const editId = searchParams.get('edit');
@@ -176,22 +178,23 @@ export default function ExchangeVoucher() {
 
         setVoucherNo(data.voucher_no || '—');
 
-        setForm({
-          voucher_date: data.voucher_date || today,
-          mobile: data.mobile || '',
-          customer_name: data.customer_name || '',
-          customer_id: data.customer_id || null,
-          rate_per_gram: data.rate_per_gram || '',
-          pure_touch: data.pure_touch || defaultPureTouch || '',
-          remarks: data.remarks || '',
-          ob_exchange_gold: data.ob_exchange_gold || 0,
-          ob_exchange_cash: data.ob_exchange_cash || 0,
-          ob_items: data.ob_items || [],
-          ob_last_voucher: data.ob_last_voucher || null,
-          ob_last_date: data.ob_last_date || null,
-          ob_tx_type: data.ob_tx_type || null,
-        });
-
+      setForm({
+  voucher_date: data.voucher_date || today,
+  mobile: data.mobile || '',
+  customer_name: data.customer_name || '',
+  customer_id: data.customer_id || null,
+  rate_per_gram: data.rate_per_gram || '',
+  pure_touch: data.pure_touch || defaultPureTouch || '',
+  remarks: data.remarks || '',
+  ob_exchange_gold: data.ob_exchange_gold || 0,
+  ob_exchange_cash: data.ob_exchange_cash || 0,
+  ob_gold: data.ob_gold || 0,
+  ob_cash: data.ob_cash || 0,
+  ob_items: data.ob_items || [],
+  ob_last_voucher: data.ob_last_voucher || null,
+  ob_last_date: data.ob_last_date || null,
+  ob_tx_type: data.ob_tx_type || null,
+});
         setItems(
           data.items && data.items.length > 0
             ? data.items.map(item => ({
@@ -205,12 +208,13 @@ export default function ExchangeVoucher() {
             : [{ ...EMPTY_ROW }]
         );
 
-        setSettle({
-          mode: data.transaction_type || 'purchase',
-          cash_gold: data.pure_gold_given || '',
-          use_ob: data.ob_skipped ? false : true,
-          cash_given: data.cash_for_remaining || '',
-        });
+      setSettle({
+  mode: data.transaction_type || 'purchase',
+  cash_gold: data.pure_gold_given || '',
+  use_ob: data.ob_skipped ? false : true,
+  use_ob_cash: data.use_ob_cash !== undefined ? !!data.use_ob_cash : true,
+  cash_given: data.cash_for_remaining || ''
+});
       } catch (e) {
         console.error('Edit load failed:', e);
         setMsg({ type: 'danger', text: 'Failed to load voucher for edit' });
@@ -247,40 +251,50 @@ export default function ExchangeVoucher() {
   const upForm = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   // Called when user selects a customer from dropdown
-  const onMobileSelect = async cust => {
+const onMobileSelect = async cust => {
+  setForm(f => ({
+    ...f,
+    mobile: cust.mobile || '',
+    customer_name: cust.name || '',
+    customer_id: cust.id || null,
+    ob_exchange_gold: 0,
+    ob_exchange_cash: 0,
+    ob_gold: Number(cust?.ob_gold ?? 0),
+    ob_cash: Number(cust?.ob_cash ?? 0),
+    ob_items: [],
+  }));
+
+  setSettle(s => ({
+  ...s,
+  use_ob: true,
+  use_ob_cash: true
+}));
+  try {
+    const ob = await exchangeAPI.getCustomerOB(cust.id);
+
     setForm(f => ({
       ...f,
       mobile: cust.mobile || '',
       customer_name: cust.name || '',
       customer_id: cust.id || null,
+      ob_exchange_gold: Number(ob?.ob_gold ?? ob?.ob_exchange_gold ?? 0),
+      ob_exchange_cash: Number(ob?.ob_cash ?? ob?.ob_exchange_cash ?? 0),
+      ob_gold: Number(cust?.ob_gold ?? 0),
+      ob_cash: Number(cust?.ob_cash ?? 0),
+      ob_items: Array.isArray(ob?.ob_items) ? ob.ob_items : [],
+    }));
+  } catch (err) {
+    console.error('Exchange OB fetch failed:', err);
+    setForm(f => ({
+      ...f,
       ob_exchange_gold: 0,
       ob_exchange_cash: 0,
+      ob_gold: Number(cust?.ob_gold ?? 0),
+      ob_cash: Number(cust?.ob_cash ?? 0),
       ob_items: [],
     }));
-
-    try {
-      const ob = await exchangeAPI.getCustomerOB(cust.id);
-      console.log('Exchange customer OB:', ob);
-
-      setForm(f => ({
-        ...f,
-        mobile: cust.mobile || '',
-        customer_name: cust.name || '',
-        customer_id: cust.id || null,
-        ob_exchange_gold: Number(ob?.ob_gold ?? ob?.ob_exchange_gold ?? 0),
-        ob_exchange_cash: Number(ob?.ob_cash ?? ob?.ob_exchange_cash ?? 0),
-        ob_items: Array.isArray(ob?.ob_items) ? ob.ob_items : [],
-      }));
-    } catch (err) {
-      console.error('Exchange OB fetch failed:', err);
-      setForm(f => ({
-        ...f,
-        ob_exchange_gold: 0,
-        ob_exchange_cash: 0,
-        ob_items: [],
-      }));
-    }
-  };
+  }
+};
 
   // Item calc: balance_touch = katcha_touch − less_touch; pure_wt = katcha_wt × balance_touch ÷ 100
   const upItem = (idx, field, value) => {
@@ -317,34 +331,62 @@ const pureTouchVal = 99.92;
 
 const obGold = parseFloat(form.ob_exchange_gold) || 0;
 const obCash = parseFloat(form.ob_exchange_cash) || 0;
-const useOB = settle.use_ob && obGold > 0;
-const obApplied = useOB ? obGold : 0;
+
+const generalObGold = parseFloat(form.ob_gold) || 0;
+const generalObCash = parseFloat(form.ob_cash) || 0;
+
+const totalObGold = obGold + generalObGold;
+const totalObCash = obCash + generalObCash;
+
+const appliedObGold = settle.use_ob ? totalObGold : 0;
+const appliedObCash = settle.use_ob_cash ? totalObCash : 0;
 
 const rate = parseFloat(form.rate_per_gram) || 0;
 const cashGold = parseFloat(settle.cash_gold) || 0;
 const cashGiven = parseFloat(settle.cash_given) || 0;
 
-// Second calculation:
-// Pure Gold Given × 99.92%
 const actualPureGold = cashGold > 0
   ? floorTo3Decimal((cashGold * pureTouchVal) / 100)
   : 0;
 
-// Total due after OB
-const netPureOwed = floorTo3Decimal(totalPureRaw - obApplied);
+const netPureOwed = floorTo3Decimal(totalPureRaw - appliedObGold);
 
 
-  useEffect(() => {
-    console.log('OB state debug:', {
-      customer_id: form.customer_id,
-      customer_name: form.customer_name,
-      ob_exchange_gold: form.ob_exchange_gold,
-      ob_exchange_cash: form.ob_exchange_cash,
-      ob_items: form.ob_items,
-      obGold,
-      obCash,
-    });
-  }, [form.customer_id, form.customer_name, form.ob_exchange_gold, form.ob_exchange_cash, form.ob_items, obGold, obCash]);
+useEffect(() => {
+  console.log('OB state debug:', {
+    customer_id: form.customer_id,
+    customer_name: form.customer_name,
+    ob_exchange_gold: form.ob_exchange_gold,
+    ob_exchange_cash: form.ob_exchange_cash,
+    ob_gold: form.ob_gold,
+    ob_cash: form.ob_cash,
+    ob_items: form.ob_items,
+    obGold,
+    obCash,
+    generalObGold,
+    generalObCash,
+    totalObGold,
+    totalObCash,
+    appliedObGold,
+    appliedObCash,
+  });
+}, [
+  form.customer_id,
+  form.customer_name,
+  form.ob_exchange_gold,
+  form.ob_exchange_cash,
+  form.ob_gold,
+  form.ob_cash,
+  form.ob_items,
+  obGold,
+  obCash,
+  generalObGold,
+  generalObCash,
+  totalObGold,
+  totalObCash,
+  appliedObGold,
+  appliedObCash
+]);
 
   // Main difference
   const diff = parseFloat((actualPureGold - netPureOwed).toFixed(3));
@@ -359,21 +401,22 @@ const extraGold = Math.max(0, parseFloat((actualPureGold - netPureOwed).toFixed(
   const isPurchaseRaw = settle.cash_gold !== '' && diff < -0.001;
 
   // Purchase cash calc
-  const cashForPurchase =
-    isPurchaseRaw && pendingGold > 0 && rate > 0
-      ? parseFloat((pendingGold * rate).toFixed(2))
-      : 0;
+ const cashForPurchase =
+  isPurchaseRaw && pendingGold > 0 && rate > 0
+    ? parseFloat((pendingGold * rate).toFixed(2))
+    : 0;
 
-  const cashRounded = Math.round(cashForPurchase);
-  const cashBalance = parseFloat((cashRounded - cashGiven).toFixed(2));
-  const extraCash = Math.max(0, parseFloat((cashGiven - cashRounded).toFixed(2)));
-  const pendingCash = Math.max(0, parseFloat((cashRounded - cashGiven).toFixed(2)));
+const totalCashDue = cashForPurchase + appliedObCash;
 
-  const purchaseCashSettled =
-    isPurchaseRaw &&
-    pendingGold > 0 &&
-    cashGiven > 0 &&
-    cashGiven >= cashForPurchase * 0.99;
+const cashRounded = Math.round(totalCashDue);
+const extraCash = Math.max(0, parseFloat((cashGiven - cashRounded).toFixed(2)));
+const pendingCash = Math.max(0, parseFloat((cashRounded - cashGiven).toFixed(2)));
+
+const purchaseCashSettled =
+  isPurchaseRaw &&
+  pendingGold > 0 &&
+  cashGiven > 0 &&
+  cashGiven >= totalCashDue * 0.99;
 
   // Final UI states
   const isNil = settle.cash_gold !== '' && (isExact || purchaseCashSettled);
@@ -409,17 +452,21 @@ const extraGold = Math.max(0, parseFloat((actualPureGold - netPureOwed).toFixed(
       }
 
       const vData = {
-        ...form,
-        customer_id: custId,
-        pure_gold_given: cashGold,
-        cash_for_remaining: cashGiven > 0 ? cashGiven : cashRounded,
-        total_pure_wt: netPureOwed,
-        actual_pure_gold: actualPureGold,
-        transaction_type: finalTxType,
-        diff_gold: actualDiff,
-        ob_applied: obApplied,
-        ob_skipped: useOB ? 0 : obGold,
-      };
+  ...form,
+  customer_id: custId,
+  pure_gold_given: cashGold,
+  cash_for_remaining: cashGiven > 0 ? cashGiven : cashRounded,
+  total_pure_wt: netPureOwed,
+  actual_pure_gold: actualPureGold,
+  transaction_type: finalTxType,
+  diff_gold: actualDiff,
+ ob_applied: appliedObGold,
+ob_cash_applied: appliedObCash,
+ob_skipped: settle.use_ob ? 0 : totalObGold,
+ob_cash_skipped: settle.use_ob_cash ? 0 : totalObCash,
+use_ob: settle.use_ob ? 1 : 0,
+use_ob_cash: settle.use_ob_cash ? 1 : 0,
+};
       const result = editId
         ? await exchangeAPI.update(editId, vData, valid)
         : await exchangeAPI.create(vData, valid);
@@ -438,20 +485,37 @@ const extraGold = Math.max(0, parseFloat((actualPureGold - netPureOwed).toFixed(
     setSaving(false);
   };
 
-  const handleClear = () => {
-    navigate('/exchange');
-    setLastSaved(null);
-    setForm({
-      voucher_date: today, mobile: '', customer_name: '', customer_id: null,
-      rate_per_gram: latestRate?.rate_24k || '', pure_touch: defaultPureTouch, remarks: '',
-      ob_exchange_gold: 0, ob_exchange_cash: 0, ob_items: [],
-      ob_last_voucher: null, ob_last_date: null, ob_tx_type: null,
-    });
-    setItems([{ ...EMPTY_ROW }]);
-    setSettle({ mode: 'purchase', cash_gold: '', use_ob: true, cash_given: '' });
-    setMsg(null);
-    exchangeAPI.getNextNo().then(no => setVoucherNo(no)).catch(() => { });
-  };
+ const handleClear = () => {
+  navigate('/exchange');
+  setLastSaved(null);
+  setForm({
+    voucher_date: today,
+    mobile: '',
+    customer_name: '',
+    customer_id: null,
+    rate_per_gram: latestRate?.rate_24k || '',
+    pure_touch: defaultPureTouch,
+    remarks: '',
+    ob_exchange_gold: 0,
+    ob_exchange_cash: 0,
+    ob_gold: 0,
+    ob_cash: 0,
+    ob_items: [],
+    ob_last_voucher: null,
+    ob_last_date: null,
+    ob_tx_type: null,
+  });
+  setItems([{ ...EMPTY_ROW }]);
+ setSettle({
+  mode: 'purchase',
+  cash_gold: '',
+  use_ob: true,
+  use_ob_cash: true,
+  cash_given: ''
+});
+  setMsg(null);
+  exchangeAPI.getNextNo().then(no => setVoucherNo(no)).catch(() => {});
+};
 
   // ── Render ───────────────────────────────────────────────────
   return (
@@ -518,140 +582,233 @@ const extraGold = Math.max(0, parseFloat((actualPureGold - netPureOwed).toFixed(
           </div>
         </div>
 
-        {/* ── Exchange OB — always show when customer is selected ── */}
-        {(form.customer_id || obGold !== 0 || obCash !== 0 || (form.ob_items || []).length > 0) && (
+   {/* ── Exchange OB — always show when customer is selected ── */}
+      {(form.customer_id || obGold !== 0 || obCash !== 0 || generalObGold !== 0 || generalObCash !== 0 || (form.ob_items || []).length > 0) && (
+  <div style={{
+    marginTop: 14,
+    background: 'linear-gradient(90deg, #F7F4EC, #EFE7D6)',
+    border: '1.5px solid rgba(120,100,60,0.18)',
+    borderRadius: 8,
+    overflow: 'hidden',
+  }}>
+    <div style={{
+      padding: '10px 16px',
+      borderBottom: '1px dashed rgba(120,100,60,0.18)',
+      fontSize: 11,
+      fontWeight: 700,
+      letterSpacing: 1,
+      color: 'var(--text-muted)',
+      textTransform: 'uppercase'
+    }}>
+      Opening Balance Summary
+    </div>
+
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr',
+      gap: 14,
+      padding: '14px 16px'
+    }}>
+      {/* GOLD BLOCK */}
+      <div style={{
+        background: 'rgba(184,134,11,0.06)',
+        border: '1px solid rgba(184,134,11,0.18)',
+        borderRadius: 8,
+        overflow: 'hidden'
+      }}>
+        <div style={{ padding: '12px 14px' }}>
           <div style={{
-            marginTop: 14,
-            background: 'linear-gradient(90deg, #F5F0E6, #EEE8D8)',
-            border: '1.5px solid rgba(184,134,11,0.3)',
-            borderRadius: 8,
-            overflow: 'hidden',
+            fontSize: 12,
+            fontWeight: 700,
+            color: 'var(--gold-dark)',
+            marginBottom: 10,
+            textTransform: 'uppercase',
+            letterSpacing: 0.8
           }}>
-            {/* Header row — total OB + OB Cash */}
+            OB Gold
+          </div>
+
+         
+        </div>
+
+        {/* Voucher-wise Exchange OB Breakdown */}
+        {(form.ob_items || []).length > 0 && (
+          <div style={{
+            borderTop: '1px dashed rgba(184,134,11,0.22)',
+            borderBottom: '1px dashed rgba(184,134,11,0.22)',
+            background: 'rgba(184,50,50,0.04)',
+            padding: '10px 12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6
+          }}>
+            {(form.ob_items || []).map((item, idx) => (
+              <div
+                key={idx}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '6px 8px',
+                  borderRadius: 5,
+                  background: 'rgba(184,50,50,0.04)',
+                  border: '1px solid rgba(184,50,50,0.14)',
+                  fontSize: 12,
+                  flexWrap: 'wrap'
+                }}
+              >
+                <strong style={{
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontWeight: 700,
+                  fontSize: 14,
+                  color: 'var(--red)',
+                  minWidth: 90,
+                }}>
+                  −{parseFloat(item.ob_amount || 0).toFixed(3)} g
+                </strong>
+
+                <span style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  padding: '2px 7px',
+                  borderRadius: 4,
+                  background: 'rgba(184,50,50,0.12)',
+                  color: 'var(--red)',
+                }}>
+                  SALES OB
+                </span>
+
+                <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>—</span>
+
+                <span style={{
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontWeight: 600,
+                  fontSize: 12,
+                  color: 'var(--gold-dark)',
+                }}>
+                  #{item.voucher_no}
+                </span>
+
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  {new Date(item.voucher_date).toLocaleDateString('en-IN', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric'
+                  })}
+                </span>
+              </div>
+            ))}
+
             <div style={{
-              padding: '10px 16px',
-              display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-              borderBottom: (form.ob_items || []).length > 0 ? '1px dashed rgba(184,134,11,0.3)' : 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '6px 8px 0',
+              marginTop: 2,
+              borderTop: '1.5px solid rgba(184,50,50,0.22)',
+              fontSize: 13,
             }}>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: 'var(--text-muted)', textTransform: 'uppercase', marginRight: 6 }}>
-                Opening Balance
-              </div>
-
-              {/* Total Sales OB Gold */}
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: '5px 14px', borderRadius: 6,
-                background: obGold > 0 ? 'rgba(184,50,50,0.08)' : 'rgba(0,0,0,0.04)',
-                border: `1.5px solid ${obGold > 0 ? 'rgba(184,50,50,0.3)' : 'rgba(0,0,0,0.1)'}`,
+              <span style={{
+                fontWeight: 700,
+                color: 'var(--red)',
+                letterSpacing: 0.5,
               }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: 0.5 }}>OB GOLD</span>
-                <strong style={{
-                  fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 17,
-                  color: obGold > 0 ? 'var(--red)' : 'var(--text-muted)',
-                }}>
-                  {obGold === 0 ? '0.000 g' : `−${obGold.toFixed(3)} g`}
-                </strong>
-                {obGold > 0 && (
-                  <span style={{ fontSize: 10, color: 'var(--red)', fontWeight: 700, background: 'rgba(184,50,50,0.1)', padding: '2px 6px', borderRadius: 4 }}>
-                    SALES OB — DEDUCTED
-                  </span>
-                )}
-                {(form.ob_items || []).length > 1 && obGold > 0 && (
-                  <span style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                    (from {(form.ob_items || []).length} vouchers)
-                  </span>
-                )}
-              </div>
-
-              {/* OB Cash */}
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: '5px 14px', borderRadius: 6,
-                background: obCash !== 0 ? 'rgba(26,80,128,0.08)' : 'rgba(0,0,0,0.04)',
-                border: `1.5px solid ${obCash !== 0 ? 'rgba(26,80,128,0.3)' : 'rgba(0,0,0,0.1)'}`,
+                {(form.ob_items || []).length > 1
+                  ? `TOTAL SALES OB (${(form.ob_items || []).length} vouchers)`
+                  : 'TOTAL SALES OB'}
+              </span>
+              <strong style={{
+                fontFamily: 'JetBrains Mono, monospace',
+                fontWeight: 700,
+                fontSize: 15,
+                color: 'var(--red)',
               }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: 0.5 }}>OB CASH</span>
-                <strong style={{
-                  fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 17,
-                  color: obCash !== 0 ? 'var(--blue)' : 'var(--text-muted)',
-                }}>
-                  {obCash === 0 ? '₹0.00' : `₹${Math.abs(obCash).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`}
-                </strong>
-              </div>
-
-              {obGold === 0 && obCash === 0 && (
-                <span style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>No previous Sales OB</span>
-              )}
+                −{obGold.toFixed(3)} g
+              </strong>
             </div>
-
-            {/* Individual Sales OB voucher breakdown */}
-            {(form.ob_items || []).length > 0 && (
-              <div style={{ padding: '8px 16px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-                {(form.ob_items || []).map((item, idx) => (
-                  <div key={idx} style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '5px 10px', borderRadius: 5,
-                    background: 'rgba(184,50,50,0.04)',
-                    border: '1px solid rgba(184,50,50,0.18)',
-                    fontSize: 12,
-                  }}>
-                    {/* Amount */}
-                    <strong style={{
-                      fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 14,
-                      color: 'var(--red)', minWidth: 90,
-                    }}>
-                      −{parseFloat(item.ob_amount || 0).toFixed(3)} g
-                    </strong>
-
-                    {/* Label badge */}
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4,
-                      background: 'rgba(184,50,50,0.12)', color: 'var(--red)',
-                    }}>
-                      SALES OB
-                    </span>
-
-                    {/* Separator */}
-                    <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>—</span>
-
-                    {/* Voucher number */}
-                    <span style={{
-                      fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, fontSize: 12,
-                      color: 'var(--gold-dark)',
-                    }}>
-                      #{item.voucher_no}
-                    </span>
-
-                    {/* Date */}
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                      {new Date(item.voucher_date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                    </span>
-                  </div>
-                ))}
-
-                {/* Total Sales OB line when multiple vouchers */}
-                {(form.ob_items || []).length > 1 && (
-                  <div style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '6px 10px', marginTop: 2,
-                    borderTop: '1.5px solid rgba(184,50,50,0.25)',
-                    fontSize: 13,
-                  }}>
-                    <span style={{ fontWeight: 700, color: 'var(--red)', letterSpacing: 0.5 }}>
-                      TOTAL SALES OB ({(form.ob_items || []).length} vouchers)
-                    </span>
-                    <strong style={{
-                      fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 16,
-                      color: 'var(--red)',
-                    }}>
-                      −{obGold.toFixed(3)} g
-                    </strong>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         )}
+
+        <div style={{ padding: '12px 14px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>General OB Gold</span>
+            <strong style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--gold-dark)' }}>
+              {generalObGold.toFixed(3)} g
+            </strong>
+          </div>
+
+          <div style={{
+            height: 1,
+            background: 'rgba(184,134,11,0.18)',
+            margin: '8px 0'
+          }} />
+
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold-dark)' }}>
+              Total Gold OB
+            </span>
+            <strong style={{
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: 16,
+              color: 'var(--gold-dark)'
+            }}>
+              {totalObGold.toFixed(3)} g
+            </strong>
+          </div>
+
+        
+        </div>
+      </div>
+
+      {/* CASH BLOCK */}
+      <div style={{
+        background: 'rgba(26,80,128,0.06)',
+        border: '1px solid rgba(26,80,128,0.18)',
+        borderRadius: 8,
+        padding: '12px 14px'
+      }}>
+        <div style={{
+          fontSize: 12,
+          fontWeight: 700,
+          color: 'var(--blue)',
+          marginBottom: 10,
+          textTransform: 'uppercase',
+          letterSpacing: 0.8
+        }}>
+          OB Cash
+        </div>
+
+        
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>General OB Cash</span>
+          <strong style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--blue)' }}>
+            ₹{generalObCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          </strong>
+        </div>
+
+        <div style={{
+          height: 1,
+          background: 'rgba(26,80,128,0.18)',
+          margin: '8px 0'
+        }} />
+
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--blue)' }}>Total Cash OB</span>
+          <strong style={{
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: 16,
+            color: 'var(--blue)'
+          }}>
+            ₹{totalObCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          </strong>
+        </div>
+
+        
+      </div>
+    </div>
+  </div>
+)}
       </div>
 
       {/* ── Items table ── */}
@@ -873,15 +1030,11 @@ const extraGold = Math.max(0, parseFloat((actualPureGold - netPureOwed).toFixed(
             }}>
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.2, color: 'var(--gold-dark)', textTransform: 'uppercase', marginBottom: 3 }}>
-                  {obApplied !== 0 ? 'Net Pure Gold Due' : 'Total Pure Gold Due'}
+                  {appliedObGold !== 0 ? 'Net Pure Gold Due' : 'Total Pure Gold Due'}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                  {cashGold > 0
-                    ? (obApplied !== 0
-                      ? `${actualPureGold.toFixed(3)}g − ${obApplied.toFixed(3)}g OB`
-                : `${cashGold.toFixed(3)}g × ${pureTouchVal}%`)
-                    : 'Calculated after entering Pure Gold Given'}
-                </div>
+               <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+  {`Raw ${totalPureRaw.toFixed(3)}g − OB Gold ${appliedObGold.toFixed(3)}g`}
+</div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ ...monoStyle, fontSize: 30, color: 'var(--gold-dark)', lineHeight: 1, textAlign: 'right' }}>
@@ -901,40 +1054,105 @@ const extraGold = Math.max(0, parseFloat((actualPureGold - netPureOwed).toFixed(
             </div>
 
             {/* OB Toggle — skip OB deduction for this transaction */}
-            {obGold > 0 && (
-              <div style={{
-                padding: '10px 18px',
-                borderTop: '1px dashed rgba(184,134,11,0.3)',
-                background: settle.use_ob ? 'rgba(184,50,50,0.04)' : 'rgba(26,110,64,0.05)',
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
-              }}>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: settle.use_ob ? 'var(--red)' : 'var(--green)' }}>
-                    {settle.use_ob
-                      ? `✓ Sales OB −${obGold.toFixed(3)}g deducted this transaction`
-                      : `⏭ Sales OB ${obGold.toFixed(3)}g skipped — carry to next transaction`}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                    {settle.use_ob
-                      ? 'Customer agreed to deduct previous Sales OB now'
-                      : 'Customer said: deduct next time'}
-                  </div>
-                </div>
-                <button
-                  onClick={() => setSettle(s => ({ ...s, use_ob: !s.use_ob, cash_gold: '' }))}
-                  style={{
-                    padding: '7px 14px', borderRadius: 6, flexShrink: 0,
-                    fontFamily: 'Inter,sans-serif', fontWeight: 700, fontSize: 11,
-                    cursor: 'pointer', border: '1.5px solid',
-                    background: settle.use_ob ? '#fff' : 'rgba(26,110,64,0.08)',
-                    borderColor: settle.use_ob ? 'rgba(184,50,50,0.4)' : 'rgba(26,110,64,0.4)',
-                    color: settle.use_ob ? 'var(--red)' : 'var(--green)',
-                  }}
-                >
-                  {settle.use_ob ? 'Skip OB →' : '← Apply OB'}
-                </button>
-              </div>
-            )}
+           {(totalObGold > 0 || totalObCash > 0) && (
+  <div style={{
+    padding: '12px 18px',
+    borderTop: '1px dashed rgba(184,134,11,0.3)',
+    background: '#FCFAF4',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+  }}>
+    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+      Opening Balance Usage in Settlement
+    </div>
+
+  {totalObGold > 0 && (
+  <div style={{
+    padding: '10px 18px',
+    borderTop: '1px dashed rgba(184,134,11,0.3)',
+    background: settle.use_ob ? 'rgba(184,50,50,0.04)' : 'rgba(26,110,64,0.05)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  }}>
+    <div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: settle.use_ob ? 'var(--red)' : 'var(--green)' }}>
+        {settle.use_ob
+          ? `✓ Total OB Gold −${totalObGold.toFixed(3)}g deducted this transaction`
+          : `⏭ Total OB Gold ${totalObGold.toFixed(3)}g skipped — carry to next transaction`}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+        {settle.use_ob
+          ? 'Customer agreed to deduct opening gold balance now'
+          : 'Customer said: deduct opening gold balance next time'}
+      </div>
+    </div>
+    <button
+      onClick={() => setSettle(s => ({ ...s, use_ob: !s.use_ob, cash_gold: '' }))}
+      style={{
+        padding: '7px 14px',
+        borderRadius: 6,
+        flexShrink: 0,
+        fontFamily: 'Inter,sans-serif',
+        fontWeight: 700,
+        fontSize: 11,
+        cursor: 'pointer',
+        border: '1.5px solid',
+        background: settle.use_ob ? '#fff' : 'rgba(26,110,64,0.08)',
+        borderColor: settle.use_ob ? 'rgba(184,50,50,0.4)' : 'rgba(26,110,64,0.4)',
+        color: settle.use_ob ? 'var(--red)' : 'var(--green)',
+      }}
+    >
+      {settle.use_ob ? 'Skip OB →' : '← Apply OB'}
+    </button>
+  </div>
+)}
+   {totalObCash > 0 && (
+  <div style={{
+    padding: '10px 18px',
+    borderTop: '1px dashed rgba(26,80,128,0.22)',
+    background: settle.use_ob_cash ? 'rgba(26,80,128,0.05)' : 'rgba(26,110,64,0.05)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  }}>
+    <div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: settle.use_ob_cash ? 'var(--blue)' : 'var(--green)' }}>
+        {settle.use_ob_cash
+          ? `✓ Total OB Cash ₹${totalObCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })} applied in this transaction`
+          : `⏭ Total OB Cash ₹${totalObCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })} skipped — carry to next transaction`}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+        {settle.use_ob_cash
+          ? 'Customer agreed to use opening cash balance now'
+          : 'Customer said: use opening cash balance next time'}
+      </div>
+    </div>
+    <button
+      onClick={() => setSettle(s => ({ ...s, use_ob_cash: !s.use_ob_cash }))}
+      style={{
+        padding: '7px 14px',
+        borderRadius: 6,
+        flexShrink: 0,
+        fontFamily: 'Inter,sans-serif',
+        fontWeight: 700,
+        fontSize: 11,
+        cursor: 'pointer',
+        border: '1.5px solid',
+        background: settle.use_ob_cash ? '#fff' : 'rgba(26,110,64,0.08)',
+        borderColor: settle.use_ob_cash ? 'rgba(26,80,128,0.35)' : 'rgba(26,110,64,0.4)',
+        color: settle.use_ob_cash ? 'var(--blue)' : 'var(--green)',
+      }}
+    >
+      {settle.use_ob_cash ? 'Skip Cash OB →' : '← Apply Cash OB'}
+    </button>
+  </div>
+)}
+  </div>
+)}
 
           </div>
 
@@ -1117,6 +1335,16 @@ const extraGold = Math.max(0, parseFloat((actualPureGold - netPureOwed).toFixed(
                           <span style={{ color: 'var(--text-muted)' }}>@ ₹{rate}/g</span>
                           <span style={{ ...monoStyle }}>₹{cashForPurchase.toFixed(2)}</span>
                         </div>
+    {totalObCash !== 0 && (
+  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+    <span style={{ color: 'var(--text-muted)' }}>
+      Total OB Cash {settle.use_ob_cash ? '(Applied)' : '(Skipped)'}
+    </span>
+    <span style={{ ...monoStyle, color: settle.use_ob_cash ? 'var(--blue)' : 'var(--text-muted)' }}>
+      {settle.use_ob_cash ? `₹${appliedObCash.toFixed(2)}` : '₹0.00'}
+    </span>
+  </div>
+)}
                         <div style={{ height: 1, background: 'var(--border)', margin: '2px 0' }} />
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontWeight: 600, color: 'var(--gold-dark)', fontSize: 13 }}>Cash to pay (rounded)</span>
@@ -1211,16 +1439,20 @@ const extraGold = Math.max(0, parseFloat((actualPureGold - netPureOwed).toFixed(
   {actualPureGold.toFixed(3)} g
 </span>
             </div>
-            {obGold > 0 && (
-              <div className="calc-row">
-                <span className="calc-label" style={{ color: settle.use_ob ? 'var(--red)' : 'var(--text-muted)', fontWeight: 600 }}>
-                  {settle.use_ob ? '− Sales OB Deduction' : '⏭ Sales OB Skipped'}
-                </span>
-                <span className="calc-value" style={{ color: settle.use_ob ? 'var(--red)' : 'var(--text-muted)' }}>
-                  {settle.use_ob ? `−${obGold.toFixed(3)} g` : `(${obGold.toFixed(3)}g → next)`}
-                </span>
-              </div>
-            )}
+{totalObGold !== 0 && (
+  <div className="calc-row">
+    <span className="calc-label">
+      Total OB Gold {settle.use_ob ? '(Applied)' : '(Skipped)'}
+    </span>
+    <span
+      className="calc-value"
+      style={{ color: settle.use_ob ? 'var(--gold-dark)' : 'var(--text-muted)' }}
+    >
+      {settle.use_ob ? `−${totalObGold.toFixed(3)} g` : '0.000 g'}
+    </span>
+  </div>
+)}
+           
             <div className="calc-row total">
               <span className="calc-label">NET PURE OWED</span>
               <span className="calc-value big">{netPureOwed.toFixed(3)} g</span>
@@ -1249,6 +1481,21 @@ const extraGold = Math.max(0, parseFloat((actualPureGold - netPureOwed).toFixed(
                     <span className="calc-label">Cash equivalent</span>
                     <span className="calc-value">₹{cashForPurchase.toFixed(2)}</span>
                   </div>
+{totalObCash !== 0 && (
+  <div className="calc-row">
+    <span className="calc-label">
+      Total OB Cash {settle.use_ob_cash ? '(Applied)' : '(Skipped)'}
+    </span>
+    <span
+      className="calc-value"
+      style={{ color: settle.use_ob_cash ? 'var(--blue)' : 'var(--text-muted)' }}
+    >
+      {settle.use_ob_cash
+        ? `₹${appliedObCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+        : '₹0.00'}
+    </span>
+  </div>
+)}
                   <div className="calc-row total">
                     <span className="calc-label">CASH TO PAY (rounded)</span>
                     <span className="calc-value big" style={{ color: 'var(--gold-dark)' }}>
@@ -1313,17 +1560,17 @@ const extraGold = Math.max(0, parseFloat((actualPureGold - netPureOwed).toFixed(
             </div>
           )}
 
-          {obCash !== 0 && (
-            <div style={{
-              marginTop: 10, padding: '8px 14px', borderRadius: 6, fontSize: 13,
-              background: 'rgba(26,80,128,0.05)', border: '1px solid rgba(26,80,128,0.18)',
-            }}>
-              <span style={{ color: 'var(--text-muted)' }}>Exchange OB Cash: </span>
-              <strong style={{ ...monoStyle, color: 'var(--blue)' }}>
-                ₹{Math.abs(obCash).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </strong>
-            </div>
-          )}
+        {totalObCash !== 0 && (
+  <div style={{
+    marginTop: 10, padding: '8px 14px', borderRadius: 6, fontSize: 13,
+    background: 'rgba(26,80,128,0.05)', border: '1px solid rgba(26,80,128,0.18)',
+  }}>
+    <span style={{ color: 'var(--text-muted)' }}>Total OB Cash: </span>
+    <strong style={{ ...monoStyle, color: 'var(--blue)' }}>
+      ₹{totalObCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+    </strong>
+  </div>
+)}
         </div>
       </div>
 

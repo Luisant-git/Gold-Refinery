@@ -33,15 +33,15 @@ router.post('/', async (req, res) => {
 
     const d = req.body;
 
-    const type = (d.entry_type || '').toLowerCase();
+    const type = (d.entry_type || '').toUpperCase();
     const pureWt = parseFloat(d.pure_wt) || 0;
     const entryDate = d.entry_date || new Date();
 
     /* =========================
        VALIDATION
     ========================= */
-    if (!['in', 'out'].includes(type)) {
-      throw new Error('Invalid entry_type (must be in/out)');
+    if (!['IN', 'OUT'].includes(type)) {
+      throw new Error('Invalid entry_type (must be IN/OUT)');
     }
 
     if (pureWt <= 0) {
@@ -51,23 +51,32 @@ router.post('/', async (req, res) => {
     /* =========================
        GET LAST STOCK BALANCE
     ========================= */
-    let prevBalance = 0;
+ const master = await client.query(`
+  SELECT COALESCE(opening_gold_stock, 0) AS opening_gold_stock
+  FROM stock_master
+  ORDER BY id ASC
+  LIMIT 1
+`);
 
-    const last = await client.query(`
-      SELECT balance_pure_wt 
-      FROM stock_ledger 
-      ORDER BY id DESC 
-      LIMIT 1
-    `);
+const opening = parseFloat(master.rows[0]?.opening_gold_stock || 0);
 
-    if (last.rows.length) {
-      prevBalance = parseFloat(last.rows[0].balance_pure_wt) || 0;
-    }
+const ledgerTotals = await client.query(`
+  SELECT
+    COALESCE(SUM(dr_pure_wt), 0) AS total_in,
+    COALESCE(SUM(cr_pure_wt), 0) AS total_out
+  FROM stock_ledger
+`);
+
+const totalIn = parseFloat(ledgerTotals.rows[0]?.total_in || 0);
+const totalOut = parseFloat(ledgerTotals.rows[0]?.total_out || 0);
+
+let prevBalance = opening + totalIn - totalOut;
+prevBalance = parseFloat(prevBalance.toFixed(3));
 
     /* =========================
        PREVENT NEGATIVE STOCK
     ========================= */
-    if (type === 'out' && pureWt > prevBalance) {
+    if (type === 'OUT' && pureWt > prevBalance) {
       throw new Error(`Insufficient stock. Available: ${prevBalance}`);
     }
 
@@ -92,7 +101,7 @@ router.post('/', async (req, res) => {
       INSERT INTO gold_entries 
       (entry_no, entry_date, customer_id, mobile, customer_name, entry_type, weight, touch, pure_wt, remarks, created_at)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
-      RETURNING id
+      RETURNING *
     `, [
       entryNo,
       entryDate,
@@ -109,8 +118,8 @@ router.post('/', async (req, res) => {
     /* =========================
        CALCULATE STOCK EFFECT
     ========================= */
-    const dr = type === 'in' ? parseFloat(pureWt.toFixed(3)) : 0;
-    const cr = type === 'out' ? parseFloat(pureWt.toFixed(3)) : 0;
+    const dr = type === 'IN' ? parseFloat(pureWt.toFixed(3)) : 0;
+    const cr = type === 'OUT' ? parseFloat(pureWt.toFixed(3)) : 0;
 
     const newBalance = prevBalance + dr - cr;
 
@@ -124,7 +133,7 @@ router.post('/', async (req, res) => {
     `, [
       entryDate,
       entryNo,
-      `Gold ${type.toUpperCase()} - ${d.customer_name || 'Direct'} (${entryNo})`,
+      `Gold ${type} - ${d.customer_name || 'Direct'} (${entryNo})`,
       dr,
       cr,
       parseFloat(newBalance.toFixed(3))
@@ -135,7 +144,8 @@ router.post('/', async (req, res) => {
     res.json({
       success: true,
       entry_no: entryNo,
-      id: insertGold.rows[0].id
+      id: insertGold.rows[0].id,
+      row: insertGold.rows[0]
     });
 
   } catch (e) {
@@ -150,6 +160,5 @@ router.post('/', async (req, res) => {
     client.release();
   }
 });
-
 
 module.exports = router;
