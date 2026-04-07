@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS voucher_sequences (
 
 INSERT INTO voucher_sequences (voucher_type, prefix, current_no)
 VALUES ('EXCHANGE','EX26',0),('SALES','SL26',0),('PURCHASE','PR26',0),
-       ('CASH_ENTRY','CE26',0),('GOLD_ENTRY','GE26',0),('EXPENSE','EXP26',0)
+       ('CASH_ENTRY','CE26',0),('GOLD_ENTRY','GE26',0),('EXPENSE','EXP26',0),('BANK_ENTRY','BE26',0) 
 ON CONFLICT (voucher_type) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS exchange_vouchers (
@@ -172,6 +172,13 @@ CREATE TABLE IF NOT EXISTS stock_ledger (
   created_at       TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS stock_master (
+  id SERIAL PRIMARY KEY,
+  opening_gold_stock DECIMAL(10,3) DEFAULT 0,
+  opening_cash_balance DECIMAL(12,2) DEFAULT 0,
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS cash_entries (
   id           SERIAL PRIMARY KEY,
   entry_no     VARCHAR(20),
@@ -214,4 +221,18 @@ CREATE TABLE IF NOT EXISTS pure_token_master (
   token_no      VARCHAR(50) NOT NULL UNIQUE,
   pure_touch    NUMERIC(5,2) NOT NULL,
   created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS bank_entries (
+  id             SERIAL PRIMARY KEY,
+  entry_no       VARCHAR(20),
+  entry_date     DATE DEFAULT CURRENT_DATE,
+  customer_id    INTEGER REFERENCES customers(id),
+  mobile         VARCHAR(15),
+  customer_name  VARCHAR(100),
+  entry_type     VARCHAR(20),
+  amount         DECIMAL(12,2) DEFAULT 0,
+  payment_mode   VARCHAR(20),       -- PhonePe / GPay / NetBanking
+  transaction_id VARCHAR(100),      -- Txn ID
+  created_at     TIMESTAMP DEFAULT NOW()
 );

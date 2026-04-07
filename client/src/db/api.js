@@ -84,8 +84,8 @@ export const stockAPI = {
   getCash: (f = {}) => get(`/stock/cash?${new URLSearchParams(f)}`).then(r => (r && r.rows) || []),
   getBank: (f = {}) => get(`/stock/bank?${new URLSearchParams(f)}`).then(r => (r && r.rows) || []),
   getCurrent: () => get('/stock/current').then(r => (r && r.row) || { balance: 0 }),
-  getMaster: () => get('/stock/master').then(r => (r && r.row) || { opening_gold_stock: 0 }),
-  updateMaster: data => put('/stock/master', data).then(r => (r && r.row) || { opening_gold_stock: 0 }),
+  getMaster: () => get('/stock/master').then(r => (r && r.row) || { opening_gold_stock: 0, opening_cash_balance: 0 }),
+  updateMaster: data => put('/stock/master', data).then(r => (r && r.row) || { opening_gold_stock: 0, opening_cash_balance: 0 }),
   rebuild: () => post('/stock/rebuild', {}),
 };
 

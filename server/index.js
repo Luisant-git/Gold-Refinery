@@ -57,6 +57,7 @@ app.use('/api/cash-entries',require('./routes/cash_entries'));
 app.use('/api/gold-entries',require('./routes/gold_entries'));
 app.use('/api/expenses',    require('./routes/expenses'));
 app.use('/api/pure-tokens', require('./routes/pure_tokens'));
+app.use('/api/bank-entries', require('./routes/banktransfer'));
 
 
  

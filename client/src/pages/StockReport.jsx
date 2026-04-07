@@ -21,6 +21,9 @@ export default function StockReport() {
 const [masterStock, setMasterStock] = useState(0);
 const [masterInput, setMasterInput] = useState('');
 
+const [masterCash, setMasterCash] = useState(0);
+const [masterCashInput, setMasterCashInput] = useState('');
+
 const loadData = async (f = filters) => {
   setLoading(true);
   try {
@@ -29,15 +32,21 @@ const loadData = async (f = filters) => {
     const bankRows = await stockAPI.getBank(f).catch(() => []);
     const stock = await stockAPI.getCurrent().catch(() => ({ balance: 0 }));
     const rate = await rateAPI.getLatest().catch(() => null);
-    const master = await stockAPI.getMaster().catch(() => ({ opening_gold_stock: 0 }));
+   const master = await stockAPI.getMaster().catch(() => ({
+  opening_gold_stock: 0,
+  opening_cash_balance: 0
+}));
 
     setGoldLedger(Array.isArray(goldRows) ? goldRows : []);
     setCashLedger(Array.isArray(cashRows) ? cashRows : []);
     setBankLedger(Array.isArray(bankRows) ? bankRows : []);
     setCurrentStock(parseFloat(stock?.balance || 0));
     setLatestRate(rate || null);
-    setMasterStock(parseFloat(master?.opening_gold_stock || 0));
-    setMasterInput(parseFloat(master?.opening_gold_stock || 0).toFixed(3));
+   setMasterStock(parseFloat(master?.opening_gold_stock || 0));
+setMasterInput(parseFloat(master?.opening_gold_stock || 0).toFixed(3));
+
+setMasterCash(parseFloat(master?.opening_cash_balance || 0));
+setMasterCashInput(parseFloat(master?.opening_cash_balance || 0).toFixed(2));
   } catch (e) {
     console.error('Stock report load failed:', e);
   } finally {
@@ -53,6 +62,8 @@ const loadData = async (f = filters) => {
   const rate = parseFloat(latestRate?.rate_24k) || 0;
   const monoStyle = { fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 };
   const displayStock = masterStock + (goldIn - goldOut);
+
+  const displayCash = masterCash + (cashIn - cashOut);
 
   return (
     <div className="page">
@@ -91,11 +102,18 @@ const loadData = async (f = filters) => {
           <div className="stat-label">Gold Stock Out</div>
         </div>
         <div className="stat-card" style={{ borderColor: 'rgba(26,80,128,0.2)' }}>
-          <div className="stat-icon" style={{ color: 'var(--blue)' }}>₹</div>
-          <div className="stat-value" style={{ color: 'var(--blue)', ...monoStyle }}>₹{(cashIn - cashOut).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
-          <div className="stat-label">Cash Net Balance</div>
-          <div className="stat-sub">In: ₹{cashIn.toLocaleString('en-IN', { maximumFractionDigits: 0 })} / Out: ₹{cashOut.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
-        </div>
+  <div className="stat-icon" style={{ color: 'var(--blue)' }}>₹</div>
+  <div className="stat-value" style={{ color: 'var(--blue)', ...monoStyle }}>
+    ₹{displayCash.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+  </div>
+  <div className="stat-label">Cash In Hand</div>
+  <div className="stat-sub">
+    In: ₹{cashIn.toLocaleString('en-IN', { maximumFractionDigits: 0 })} / Out: ₹{cashOut.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+  </div>
+  <div className="stat-sub">
+    Master: ₹{masterCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+  </div>
+</div>
         <div className="stat-card" style={{ borderColor: 'rgba(120,70,180,0.2)' }}>
           <div className="stat-icon" style={{ color: '#7C4DFF' }}>🏦</div>
           <div className="stat-value" style={{ color: '#7C4DFF', ...monoStyle }}>
@@ -107,71 +125,177 @@ const loadData = async (f = filters) => {
           </div>
         </div>
       </div>
-      <div className="card no-print" style={{ marginBottom: 12 }}>
+     <div className="card no-print" style={{ marginBottom: 12 }}>
   <div style={{
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'end',
-    gap: 12,
-    flexWrap: 'wrap'
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+    gap: 16
   }}>
-    <div>
+    {/* Master Gold */}
+    <div style={{
+      border: '1px solid rgba(184,134,11,0.18)',
+      borderRadius: 8,
+      padding: 14,
+      background: 'rgba(184,134,11,0.04)'
+    }}>
       <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gold-dark)', marginBottom: 4 }}>
         Master Gold Stock
       </div>
-      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-        Enter opening / manual stock in hand
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+        Enter opening / manual gold stock in hand
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'end', gap: 8 }}>
+        <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
+          <label>Gold Stock (g)</label>
+          <input
+            type="number"
+            step="0.001"
+            value={masterInput}
+            onChange={e => setMasterInput(e.target.value)}
+            style={{ width: '100%', ...monoStyle, textAlign: 'right' }}
+          />
+        </div>
+
+        <button
+          className="btn btn-primary"
+          onClick={async () => {
+            try {
+              await stockAPI.updateMaster({
+                opening_gold_stock: masterInput,
+                opening_cash_balance: masterCashInput
+              });
+              await loadData(filters);
+            } catch (e) {
+              console.error('Failed to save gold master:', e);
+            }
+          }}
+        >
+          Save Gold
+        </button>
       </div>
     </div>
 
-    <div style={{ display: 'flex', alignItems: 'end', gap: 8 }}>
-      <div className="form-group" style={{ marginBottom: 0 }}>
-        <label>Gold Stock (g)</label>
-        <input
-          type="number"
-          step="0.001"
-          value={masterInput}
-          onChange={e => setMasterInput(e.target.value)}
-          style={{ minWidth: 140, ...monoStyle, textAlign: 'right' }}
-        />
+    {/* Master Cash */}
+    <div style={{
+      border: '1px solid rgba(26,80,128,0.18)',
+      borderRadius: 8,
+      padding: 14,
+      background: 'rgba(26,80,128,0.04)'
+    }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--blue)', marginBottom: 4 }}>
+        Master Cash In Hand
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+        Enter opening / manual cash balance in hand
       </div>
 
-      <button
-        className="btn btn-primary"
-        onClick={async () => {
-          try {
-            await stockAPI.updateMaster({ opening_gold_stock: masterInput });
-            await loadData(filters);
-          } catch (e) {
-            console.error('Failed to save stock master:', e);
-          }
-        }}
-      >
-        Save Stock
-      </button>
+      <div style={{ display: 'flex', alignItems: 'end', gap: 8 }}>
+        <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
+          <label>Cash Balance (₹)</label>
+          <input
+            type="number"
+            step="0.01"
+            value={masterCashInput}
+            onChange={e => setMasterCashInput(e.target.value)}
+            style={{ width: '100%', ...monoStyle, textAlign: 'right' }}
+          />
+        </div>
+
+        <button
+          className="btn btn-primary"
+          onClick={async () => {
+            try {
+              await stockAPI.updateMaster({
+                opening_gold_stock: masterInput,
+                opening_cash_balance: masterCashInput
+              });
+              await loadData(filters);
+            } catch (e) {
+              console.error('Failed to save cash master:', e);
+            }
+          }}
+        >
+          Save Cash
+        </button>
+      </div>
     </div>
   </div>
 </div>
 
       {/* Filters */}
-      <div className="card no-print">
+            <div className="card no-print">
         <div className="filter-bar" style={{ marginBottom: 0 }}>
-          <div className="form-group"><label>From Date</label>
-            <input type="date" value={filters.date_from} onChange={e => setFilters(f => ({ ...f, date_from: e.target.value }))} /></div>
-          <div className="form-group"><label>To Date</label>
-            <input type="date" value={filters.date_to} onChange={e => setFilters(f => ({ ...f, date_to: e.target.value }))} /></div>
-          <div className="form-group"><label>Gold Type</label>
-          <select value={filters.ref_type} onChange={e => setFilters(f => ({ ...f, ref_type: e.target.value }))}>
-  <option value="">All</option>
-  <option value="exchange">Exchange</option>
-  <option value="sales">Sales</option>
-  <option value="purchase">Purchase</option>
-  <option value="processing">Processing</option>
-  <option value="gold_entry">Gold Entry</option>  {/* ✅ ADD THIS */}
-</select></div>
-          <div className="form-group" style={{ paddingTop: 20 }}>
-            <button className="btn btn-primary" onClick={() => loadData(filters)}>Apply Filter</button>
+          <div className="form-group">
+            <label>From Date</label>
+            <input
+              type="date"
+              value={filters.date_from}
+              onChange={e => setFilters(f => ({ ...f, date_from: e.target.value }))}
+            />
           </div>
+
+          <div className="form-group">
+            <label>To Date</label>
+            <input
+              type="date"
+              value={filters.date_to}
+              onChange={e => setFilters(f => ({ ...f, date_to: e.target.value }))}
+            />
+          </div>
+
+          <div className="form-group">
+            <label>
+              {tab === 'gold' ? 'Gold Type' : tab === 'cash' ? 'Cash Source' : 'Bank Source'}
+            </label>
+            <select
+              value={filters.ref_type}
+              onChange={e => setFilters(f => ({ ...f, ref_type: e.target.value }))}
+            >
+              <option value="">All</option>
+              <option value="exchange">Exchange</option>
+              <option value="sales">Sales</option>
+              <option value="purchase">Purchase</option>
+              {tab === 'gold' && <option value="processing">Processing</option>}
+              {tab === 'gold' && <option value="gold_entry">Gold Entry</option>}
+            </select>
+          </div>
+
+          <div className="form-group" style={{ paddingTop: 20, display: 'flex', gap: 8 }}>
+            <button className="btn btn-primary" onClick={() => loadData(filters)}>
+              Apply Filter
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                const reset = {
+                  date_from: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+                  date_to: new Date().toISOString().split('T')[0],
+                  ref_type: '',
+                };
+                setFilters(reset);
+                loadData(reset);
+              }}
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+
+        <div style={{
+          marginTop: 10,
+          paddingTop: 10,
+          borderTop: '1px dashed var(--border)',
+          fontSize: 12,
+          color: 'var(--text-muted)',
+          display: 'flex',
+          gap: 18,
+          flexWrap: 'wrap'
+        }}>
+          <span><strong>From:</strong> {filters.date_from || '—'}</span>
+          <span><strong>To:</strong> {filters.date_to || '—'}</span>
+          <span><strong>Type:</strong> {filters.ref_type || 'All'}</span>
+          <span><strong>View:</strong> {tab === 'gold' ? 'Gold Statement' : tab === 'cash' ? 'Cash Statement' : 'Bank Statement'}</span>
         </div>
       </div>
 

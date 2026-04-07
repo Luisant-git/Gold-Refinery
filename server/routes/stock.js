@@ -108,16 +108,32 @@ router.get('/bank', async (req, res) => {
 // Current stock
 router.get('/current', async (req, res) => {
   try {
-    const r = await getPool().query(`
-      SELECT COALESCE(balance_pure_wt, 0) AS balance
-      FROM stock_ledger
-      ORDER BY id DESC
+    const pool = getPool();
+
+    const master = await pool.query(`
+      SELECT COALESCE(opening_gold_stock, 0) AS opening_gold_stock
+      FROM stock_master
+      ORDER BY id ASC
       LIMIT 1
     `);
 
+    const opening = parseFloat(master.rows[0]?.opening_gold_stock || 0);
+
+    const ledger = await pool.query(`
+      SELECT
+        COALESCE(SUM(dr_pure_wt), 0) AS total_in,
+        COALESCE(SUM(cr_pure_wt), 0) AS total_out
+      FROM stock_ledger
+    `);
+
+    const totalIn = parseFloat(ledger.rows[0]?.total_in || 0);
+    const totalOut = parseFloat(ledger.rows[0]?.total_out || 0);
+
+    const balance = opening + totalIn - totalOut;
+
     res.json({
       success: true,
-      row: r.rows[0] || { balance: 0 }
+      row: { balance: parseFloat(balance.toFixed(3)) }
     });
   } catch (e) {
     res.json({ success: false, error: e.message });
@@ -125,10 +141,11 @@ router.get('/current', async (req, res) => {
 });
 
 // Stock master
+// Stock master
 router.get('/master', async (req, res) => {
   try {
     const r = await getPool().query(`
-      SELECT id, opening_gold_stock, updated_at
+      SELECT id, opening_gold_stock, opening_cash_balance, updated_at
       FROM stock_master
       ORDER BY id ASC
       LIMIT 1
@@ -136,7 +153,12 @@ router.get('/master', async (req, res) => {
 
     res.json({
       success: true,
-      row: r.rows[0] || { id: null, opening_gold_stock: 0, updated_at: null }
+      row: r.rows[0] || {
+        id: null,
+        opening_gold_stock: 0,
+        opening_cash_balance: 0,
+        updated_at: null
+      }
     });
   } catch (e) {
     res.json({ success: false, error: e.message });
@@ -146,6 +168,7 @@ router.get('/master', async (req, res) => {
 router.put('/master', async (req, res) => {
   try {
     const openingGoldStock = parseFloat(req.body.opening_gold_stock) || 0;
+    const openingCashBalance = parseFloat(req.body.opening_cash_balance) || 0;
     const pool = getPool();
 
     const existing = await pool.query(`
@@ -161,18 +184,19 @@ router.put('/master', async (req, res) => {
       const updated = await pool.query(`
         UPDATE stock_master
         SET opening_gold_stock = $1,
+            opening_cash_balance = $2,
             updated_at = NOW()
-        WHERE id = $2
+        WHERE id = $3
         RETURNING *
-      `, [openingGoldStock, existing.rows[0].id]);
+      `, [openingGoldStock, openingCashBalance, existing.rows[0].id]);
 
       row = updated.rows[0];
     } else {
       const inserted = await pool.query(`
-        INSERT INTO stock_master (opening_gold_stock, updated_at)
-        VALUES ($1, NOW())
+        INSERT INTO stock_master (opening_gold_stock, opening_cash_balance, updated_at)
+        VALUES ($1, $2, NOW())
         RETURNING *
-      `, [openingGoldStock]);
+      `, [openingGoldStock, openingCashBalance]);
 
       row = inserted.rows[0];
     }
@@ -183,9 +207,20 @@ router.put('/master', async (req, res) => {
   }
 });
 
+
+
 router.post('/rebuild', async (req, res) => {
   try {
     const pool = getPool();
+
+    const master = await pool.query(`
+      SELECT COALESCE(opening_gold_stock, 0) AS opening_gold_stock
+      FROM stock_master
+      ORDER BY id ASC
+      LIMIT 1
+    `);
+
+    let running = parseFloat(master.rows[0]?.opening_gold_stock || 0);
 
     const rows = await pool.query(`
       SELECT id,
@@ -194,8 +229,6 @@ router.post('/rebuild', async (req, res) => {
       FROM stock_ledger
       ORDER BY id ASC
     `);
-
-    let running = 0;
 
     for (const row of rows.rows) {
       const dr = parseFloat(row.dr_pure_wt) || 0;
