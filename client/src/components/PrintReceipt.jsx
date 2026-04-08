@@ -47,7 +47,7 @@ export default function PrintReceipt({ voucher, type, onClose }) {
 const pureTouchVal = parseFloat(voucher.pure_touch || masterPureTouch || 99.92);
 
 const actualPureWt = floorTo3Decimal(
-  parseFloat(voucher.actual_pure_gold || voucher.actual_pure_wt || voucher.total_pure_wt || 0)
+  parseFloat(voucher.actual_pure_gold || voucher.actual_pure_wt || 0)
 );
 
 const netPureOwed = floorTo3Decimal(
@@ -66,7 +66,15 @@ const extraCash = parseFloat(voucher.extra_cash || 0);
 const hasOB = isExchange && Math.abs(netPureOwed - actualPureWt) > 0.001;
 const obAmount = hasOB ? floorTo3Decimal(actualPureWt - netPureOwed) : 0;
 
-const closingBalance = floorTo3Decimal(convertedGivenGold - netPureOwed);
+const rawGoldBalance = floorTo3Decimal(convertedGivenGold - netPureOwed);
+
+const isCashSettled =
+  isExchange &&
+  requiredCash > 0 &&
+  cashGiven > 0 &&
+  cashGiven >= requiredCash * 0.99;
+
+const closingBalance = isCashSettled ? 0 : rawGoldBalance;
 const isNilBalance = isExchange && Math.abs(closingBalance) < 0.001;
   const totalKatcha = items.reduce((s, r) => s + (parseFloat(r.katcha_wt) || 0), 0);
   const totalWt = parseFloat(voucher.total_gross_wt || 0);
@@ -238,10 +246,10 @@ const isNilBalance = isExchange && Math.abs(closingBalance) < 0.001;
                 )}
 
                 {/* Net pure line after OB */}
-                <div style={{ borderTop: '1px dashed #000', ...row, paddingTop: 3, fontWeight: 'bold' }}>
-                  <span></span>
-                  <span>{netPureOwed.toFixed(3)}</span>
-                </div>
+               <div style={{ borderTop: '1px dashed #000', ...row, paddingTop: 3, fontWeight: 'bold' }}>
+  <span>NET PURE</span>
+  <span>{netPureOwed.toFixed(3)}</span>
+</div>
 
                 {/* PURE GOLD calc */}
                 <div style={{ marginTop: 6, marginBottom: 4 }}>
@@ -278,13 +286,15 @@ const isNilBalance = isExchange && Math.abs(closingBalance) < 0.001;
 
                 {/* Closing balance */}
                 <div style={{ borderTop: '1px solid #000', paddingTop: 4, marginTop: 4, ...row }}>
-                  <span>CLOSING BALANCE</span>
-                  <span style={{ fontWeight: 'bold' }}>
-                    {isNilBalance
-                      ? 'NIL'
-                      : `${closingBalance > 0 ? '+' : ''}${closingBalance.toFixed(3)} g`}
-                  </span>
-                </div>
+  <span>CLOSING BALANCE</span>
+  <span style={{ fontWeight: 'bold' }}>
+    {isCashSettled
+      ? 'NIL'
+      : isNilBalance
+        ? 'NIL'
+        : `${closingBalance > 0 ? '+' : ''}${closingBalance.toFixed(3)} g`}
+  </span>
+</div>
 
                 {/* Token + touch */}
                 <div style={{ marginTop: 6, fontSize: 10 }}>

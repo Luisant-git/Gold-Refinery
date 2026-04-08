@@ -378,12 +378,7 @@ const totalCashOb = obCash + exchangeObCash;
                     OB Gold
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Exchange OB Gold</span>
-                    <strong style={{ fontFamily: 'JetBrains Mono, monospace', color: exchangeObGold > 0 ? 'var(--red)' : 'var(--gold-dark)' }}>
-                      {exchangeObGold > 0 ? `−${exchangeObGold.toFixed(3)} g` : '0.000 g'}
-                    </strong>
-                  </div>
+                  
                 </div>
 
                 {(form.exchange_ob_items || []).length > 0 && (
@@ -536,12 +531,7 @@ const totalCashOb = obCash + exchangeObCash;
                     </strong>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Exchange OB Cash</span>
-                    <strong style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--blue)' }}>
-                      ₹{exchangeObCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </strong>
-                  </div>
+                 
                 </div>
 
                 {(form.ob_items || []).length > 0 && (

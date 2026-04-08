@@ -49,14 +49,30 @@ const floorTo3Decimal = (num) => {
   return Math.floor(n * 1000) / 1000;
 };
   // For list: use actual_pure_wt if available (exchange), else total_pure_wt
-const getPureWt = v => activeTab === 'exchange'
-  ? floorTo3Decimal(parseFloat(v.actual_pure_gold || v.actual_pure_wt || v.total_pure_wt || 0))
-  : parseFloat(v.total_pure_wt || 0);
+const getPureWt = v =>
+  activeTab === 'exchange'
+    ? floorTo3Decimal(parseFloat(v.actual_pure_gold || v.actual_pure_wt || 0))
+    : parseFloat(v.total_pure_wt || 0);
   const totalGross = vouchers.reduce((s, v) => s + (parseFloat(v.total_gross_wt) || 0), 0);
   const totalPure = vouchers.reduce((s, v) => s + getPureWt(v), 0);
   const totalAmount = vouchers.reduce((s, v) => s + (parseFloat(v.net_amount) || 0), 0);
 
   const monoStyle = { fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 };
+  const getExchangeDetailBalance = (detail) => {
+  const pureTouch = parseFloat(detail.pure_touch || 99.92);
+  const goldGiven = parseFloat(detail.pure_wt_given || detail.pure_gold_given || 0);
+  const convertedGold = floorTo3Decimal((goldGiven * pureTouch) / 100);
+  const netPure = parseFloat(detail.total_pure_wt || 0);
+  const requiredCash = parseFloat(detail.required_cash || 0);
+  const cashGiven = parseFloat(detail.cash_given || 0);
+
+  const cashSettled =
+    requiredCash > 0 &&
+    cashGiven > 0 &&
+    cashGiven >= requiredCash * 0.99;
+
+  return cashSettled ? 0 : floorTo3Decimal(convertedGold - netPure);
+};
 
   return (
     <div className="page">
@@ -139,12 +155,21 @@ const getPureWt = v => activeTab === 'exchange'
                 <tbody>
                   {vouchers.map(v => {
                     const pureWt = getPureWt(v);
+const exchangePureTouch = parseFloat(v.pure_touch || 99.92);
+const exchangeGivenGold = parseFloat(v.pure_wt_given || v.pure_gold_given || 0);
+const exchangeConvertedGold = floorTo3Decimal((exchangeGivenGold * exchangePureTouch) / 100);
+const exchangeRequiredCash = parseFloat(v.required_cash || 0);
+const exchangeCashGiven = parseFloat(v.cash_given || 0);
+
+const exchangeCashSettled =
+  exchangeRequiredCash > 0 &&
+  exchangeCashGiven > 0 &&
+  exchangeCashGiven >= exchangeRequiredCash * 0.99;
+
 const balance = activeTab === 'exchange'
-  ? floorTo3Decimal(
-      (
-        (parseFloat(v.pure_wt_given || v.pure_gold_given || 0) * 99.92) / 100
-      ) - parseFloat(v.total_pure_wt || 0)
-    )
+  ? exchangeCashSettled
+    ? 0
+    : floorTo3Decimal(exchangeConvertedGold - parseFloat(v.total_pure_wt || 0))
   : 0;
                     return (
                       <tr key={v.id}>
@@ -389,20 +414,18 @@ const balance = activeTab === 'exchange'
 
 <div className="calc-row total">
   <span className="calc-label">Balance</span>
-  <span className="calc-value big" style={{
-    color: (
-      (((parseFloat(detail.pure_wt_given || detail.pure_gold_given || 0) * 99.92) / 100) - parseFloat(detail.total_pure_wt || 0))
-    ) > 0.001
-      ? 'var(--blue)'
-      : (
-        (((parseFloat(detail.pure_wt_given || detail.pure_gold_given || 0) * 99.92) / 100) - parseFloat(detail.total_pure_wt || 0))
-      ) < -0.001
-        ? 'var(--red)'
-        : 'var(--green)'
-  }}>
-    {(
-      (((parseFloat(detail.pure_wt_given || detail.pure_gold_given || 0) * 99.92) / 100) - parseFloat(detail.total_pure_wt || 0))
-    ).toFixed(3)} g
+  <span
+    className="calc-value big"
+    style={{
+      color:
+        getExchangeDetailBalance(detail) > 0.001
+          ? 'var(--blue)'
+          : getExchangeDetailBalance(detail) < -0.001
+          ? 'var(--red)'
+          : 'var(--green)'
+    }}
+  >
+    {getExchangeDetailBalance(detail).toFixed(3)} g
   </span>
 </div>
                       {detail.transaction_type && (

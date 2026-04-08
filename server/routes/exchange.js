@@ -65,6 +65,12 @@ router.get('/customer-ob/:customerId', async (req, res) => {
         COALESCE(cash_given, 0) AS cash_given,
         COALESCE(rate_per_gram, 0) AS rate_per_gram,
         COALESCE(ob_skipped, 0) AS ob_skipped,
+        COALESCE(required_cash, 0) AS required_cash,
+        COALESCE(extra_cash, 0) AS extra_cash,
+        COALESCE(ob_applied, 0) AS ob_applied,
+        COALESCE(ob_cash_applied, 0) AS ob_cash_applied,
+        COALESCE(use_ob, 1) AS use_ob,
+        COALESCE(use_ob_cash, 1) AS use_ob_cash,
         transaction_type
       FROM exchange_vouchers
       WHERE customer_id = $1
@@ -81,27 +87,70 @@ router.get('/customer-ob/:customerId', async (req, res) => {
       });
     }
 
-   const ob_items = vs.rows
-  .filter(v =>
-    v.transaction_type === 'sales' &&
-    (parseFloat(v.diff_gold) || 0) > 0.001
-  )
-  .map(v => ({
-    voucher_no: v.voucher_no,
-    voucher_date: v.voucher_date,
-    ob_amount: parseFloat(v.diff_gold).toFixed(3)
-  }));
+    let runningGoldOB = 0;
+    let runningCashOB = 0;
+    let openItems = [];
 
-const runningOB = parseFloat(
-  ob_items.reduce((s, item) => s + (parseFloat(item.ob_amount) || 0), 0).toFixed(3)
-);
+    for (const v of vs.rows) {
+      const diffGold = parseFloat(v.diff_gold) || 0;
+      const obApplied = parseFloat(v.ob_applied) || 0;
+      const obCashApplied = parseFloat(v.ob_cash_applied) || 0;
+      const extraCash = parseFloat(v.extra_cash) || 0;
+      const useOb = parseInt(v.use_ob) || 0;
+      const useObCash = parseInt(v.use_ob_cash) || 0;
 
-    res.json({
+      // Reduce old gold OB if applied in this voucher
+      if (useOb === 1 && obApplied > 0.001) {
+        let remainingToAdjust = obApplied;
+
+        openItems = openItems.map(item => {
+          if (remainingToAdjust <= 0) return item;
+
+          const amt = parseFloat(item.ob_amount) || 0;
+          const used = Math.min(amt, remainingToAdjust);
+          remainingToAdjust -= used;
+
+          return {
+            ...item,
+            ob_amount: parseFloat((amt - used).toFixed(3))
+          };
+        }).filter(item => parseFloat(item.ob_amount) > 0.001);
+
+        runningGoldOB = parseFloat(
+          openItems.reduce((s, item) => s + (parseFloat(item.ob_amount) || 0), 0).toFixed(3)
+        );
+      }
+
+      // Reduce old cash OB if applied in this voucher
+      if (useObCash === 1 && obCashApplied > 0.009) {
+        runningCashOB = Math.max(
+          0,
+          parseFloat((runningCashOB - obCashApplied).toFixed(2))
+        );
+      }
+
+      // Add new gold OB from SALES transaction (extra gold given)
+      if (v.transaction_type === 'sales' && diffGold > 0.001) {
+        runningGoldOB = parseFloat((runningGoldOB + diffGold).toFixed(3));
+        openItems.push({
+          voucher_no: v.voucher_no,
+          voucher_date: v.voucher_date,
+          ob_amount: parseFloat(diffGold).toFixed(3)
+        });
+      }
+
+      // Add new cash OB from PURCHASE transaction (extra cash still pending)
+      if (v.transaction_type === 'purchase' && extraCash > 0.009) {
+        runningCashOB = parseFloat((runningCashOB + extraCash).toFixed(2));
+      }
+    }
+
+    return res.json({
       success: true,
-      ob_gold: runningOB,
-      ob_cash: 0,
+      ob_gold: runningGoldOB,
+      ob_cash: runningCashOB,
       has_history: true,
-      ob_items
+      ob_items: openItems.filter(item => parseFloat(item.ob_amount) > 0.001)
     });
   } catch (e) {
     res.json({ success: false, error: e.message });
@@ -194,38 +243,42 @@ const cashGoldEquivalent = ratePerGram > 0
 const balancePure = parseFloat((actualPureGold - netPureOwed).toFixed(3));
     // Update voucher header
     await client.query(`
-      UPDATE exchange_vouchers
-SET
-  voucher_date      = $1,
-  customer_id       = $2,
-  mobile            = $3,
-  customer_name     = $4,
-  total_katcha_wt   = $5,
-  total_token_wt    = 0,
-  total_gross_wt    = $6,
-  actual_pure_wt    = $7,
-  total_pure_wt     = $8,
-  pure_wt_given     = $9,
-  cash_given        = $10,
-  balance_pure_wt   = $11,
-  rate_per_gram     = $12,
-  pure_touch        = $13,
-  transaction_type  = $14,
-  diff_gold         = $15,
-  ob_skipped        = $16,
-  required_cash     = $17,
-  extra_cash        = $18,
-  remarks           = $19,
-  updated_at        = NOW()
-WHERE id = $20
-    `,[
+  UPDATE exchange_vouchers
+  SET
+    voucher_date      = $1,
+    customer_id       = $2,
+    mobile            = $3,
+    customer_name     = $4,
+    total_katcha_wt   = $5,
+    total_token_wt    = 0,
+    total_gross_wt    = $6,
+    actual_pure_wt    = $7,
+    total_pure_wt     = $8,
+    pure_wt_given     = $9,
+    cash_given        = $10,
+    balance_pure_wt   = $11,
+    rate_per_gram     = $12,
+    pure_touch        = $13,
+    transaction_type  = $14,
+    diff_gold         = $15,
+    ob_skipped        = $16,
+    ob_applied        = $17,
+    ob_cash_applied   = $18,
+    use_ob            = $19,
+    use_ob_cash       = $20,
+    required_cash     = $21,
+    extra_cash        = $22,
+    remarks           = $23,
+    updated_at        = NOW()
+  WHERE id = $24
+`, [
   vd.voucher_date,
   vd.customer_id || null,
   vd.mobile,
   vd.customer_name,
   parseFloat(totalKatchaWt.toFixed(3)),
   parseFloat(totalKatchaWt.toFixed(3)),
-itemPureTotal,
+  itemPureTotal,
   netPureOwed,
   cashGoldGiven,
   cashForRem,
@@ -235,6 +288,10 @@ itemPureTotal,
   vd.transaction_type || 'nil',
   parseFloat(vd.diff_gold) || 0,
   parseFloat(vd.ob_skipped) || 0,
+  parseFloat(vd.ob_applied) || 0,
+  parseFloat(vd.ob_cash_applied) || 0,
+  parseInt(vd.use_ob) || 0,
+  parseInt(vd.use_ob_cash) || 0,
   requiredCash,
   extraCash,
   vd.remarks || null,
@@ -395,25 +452,36 @@ const cashGoldEquivalent = ratePerGram > 0
 
 const balancePure = parseFloat((actualPureGold - netPureOwed).toFixed(3));
     // Insert voucher
-    const vRes = await client.query(`
-   INSERT INTO exchange_vouchers
-  (voucher_no,voucher_date,customer_id,mobile,customer_name,
-   total_katcha_wt,total_token_wt,total_gross_wt,actual_pure_wt,total_pure_wt,
-   pure_wt_given,cash_given,balance_pure_wt,rate_per_gram,
-   pure_touch,transaction_type,diff_gold,ob_skipped,required_cash,extra_cash,remarks,status,created_at,updated_at)
-VALUES ($1,$2,$3,$4,$5,$6,0,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'completed',NOW(),NOW())
-      RETURNING id`,
-     [
+ const vRes = await client.query(`
+  INSERT INTO exchange_vouchers
+  (
+    voucher_no, voucher_date, customer_id, mobile, customer_name,
+    total_katcha_wt, total_token_wt, total_gross_wt, actual_pure_wt, total_pure_wt,
+    pure_wt_given, cash_given, balance_pure_wt, rate_per_gram,
+    pure_touch, transaction_type, diff_gold,
+    ob_skipped, ob_applied, ob_cash_applied, use_ob, use_ob_cash,
+    required_cash, extra_cash, remarks, status, created_at, updated_at
+  )
+  VALUES (
+    $1,$2,$3,$4,$5,
+    $6,0,$7,$8,$9,
+    $10,$11,$12,$13,
+    $14,$15,$16,
+    $17,$18,$19,$20,$21,
+    $22,$23,$24,'completed',NOW(),NOW()
+  )
+  RETURNING id
+`, [
   voucherNo,
   vd.voucher_date,
   vd.customer_id || null,
   vd.mobile,
   vd.customer_name,
   parseFloat(totalKatchaWt.toFixed(3)),
-parseFloat(totalKatchaWt.toFixed(3)),
-itemPureTotal,
-netPureOwed,
-cashGoldGiven,
+  parseFloat(totalKatchaWt.toFixed(3)),
+  itemPureTotal,
+  netPureOwed,
+  cashGoldGiven,
   cashForRem,
   balancePure,
   ratePerGram,
@@ -421,6 +489,10 @@ cashGoldGiven,
   vd.transaction_type || 'nil',
   parseFloat(vd.diff_gold) || 0,
   parseFloat(vd.ob_skipped) || 0,
+  parseFloat(vd.ob_applied) || 0,
+  parseFloat(vd.ob_cash_applied) || 0,
+  parseInt(vd.use_ob) || 0,
+  parseInt(vd.use_ob_cash) || 0,
   requiredCash,
   extraCash,
   vd.remarks || null
@@ -439,11 +511,35 @@ cashGoldGiven,
     const balR = await client.query(`SELECT COALESCE(MAX(id),0) AS lid FROM stock_ledger`);
     let bal=0;
     if (balR.rows[0].lid>0) { const lb=await client.query(`SELECT balance_pure_wt FROM stock_ledger ORDER BY id DESC LIMIT 1`); bal=parseFloat(lb.rows[0].balance_pure_wt)||0; }
-    await client.query(`
+        await client.query(`
       INSERT INTO stock_ledger (entry_date,entry_type,ref_type,ref_no,description,dr_pure_wt,cr_pure_wt,balance_pure_wt,created_at)
       VALUES ($1,'receipt','exchange',$2,$3,$4,$5,$6,NOW())`,
-      [vd.voucher_date,voucherNo,`Exchange from ${vd.customer_name} (${vd.mobile})`,
+      [vd.voucher_date, voucherNo, `Exchange from ${vd.customer_name} (${vd.mobile})`,
        itemPureTotal, actualPureGold, bal + itemPureTotal - actualPureGold]);
+
+    // Reduce customer master OB if applied in this transaction
+    if (vd.customer_id) {
+      const obAppliedGold = parseFloat(vd.ob_applied) || 0;
+      const obAppliedCash = parseFloat(vd.ob_cash_applied) || 0;
+      const useOb = parseInt(vd.use_ob) || 0;
+      const useObCash = parseInt(vd.use_ob_cash) || 0;
+
+      if ((useOb === 1 && obAppliedGold > 0.001) || (useObCash === 1 && obAppliedCash > 0.009)) {
+        await client.query(`
+          UPDATE customers
+          SET
+            ob_gold = GREATEST(0, COALESCE(ob_gold, 0) - $1),
+            ob_cash = GREATEST(0, COALESCE(ob_cash, 0) - $2),
+            updated_at = NOW()
+          WHERE id = $3
+        `, [
+          useOb === 1 ? obAppliedGold : 0,
+          useObCash === 1 ? obAppliedCash : 0,
+          vd.customer_id
+        ]);
+      }
+    }
+
     await client.query('COMMIT');
     res.json({ success:true, voucher_no:voucherNo, id:voucherId });
   } catch(e) { await client.query('ROLLBACK'); res.json({ success:false, error:e.message }); }
